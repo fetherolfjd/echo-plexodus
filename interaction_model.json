@@ -1,0 +1,279 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "plex",
+      "intents": [
+        {
+          "name": "PlayMusicIntent",
+          "slots": [
+            {
+              "name": "song",
+              "type": "AMAZON.MusicRecording"
+            },
+            {
+              "name": "artist",
+              "type": "AMAZON.MusicGroup"
+            },
+            {
+              "name": "album",
+              "type": "AMAZON.MusicAlbum"
+            },
+            {
+              "name": "playlist",
+              "type": "AMAZON.MusicPlaylist"
+            }
+          ],
+          "samples": [
+            "play the song {song}",
+            "play {song}",
+            "play the track {song}",
+            "play the song {song} by {artist}",
+            "play the track {song} by {artist}",
+            "play {song} by {artist}",
+            "I want to hear {song} by {artist}",
+            "put on {song} by {artist}",
+            "play the artist {artist}",
+            "play music by {artist}",
+            "play songs by {artist}",
+            "play {artist}",
+            "play the album {album}",
+            "play album {album}",
+            "play the playlist {playlist}",
+            "play playlist {playlist}",
+            "put on {artist}",
+            "put on the album {album}",
+            "put on {song}",
+            "I want to listen to {artist}",
+            "I want to hear {song}",
+            "play some {artist}"
+          ]
+        },
+        {
+          "name": "ShuffleArtistIntent",
+          "slots": [
+            {
+              "name": "artist",
+              "type": "AMAZON.MusicGroup"
+            }
+          ],
+          "samples": [
+            "shuffle {artist}",
+            "shuffle songs by {artist}",
+            "shuffle music by {artist}",
+            "play {artist} on shuffle",
+            "random {artist}",
+            "play random {artist}"
+          ]
+        },
+        {
+          "name": "AMAZON.PauseIntent"
+        },
+        {
+          "name": "PlayDecadeIntent",
+          "slots": [
+            {
+              "name": "decade",
+              "type": "DECADE_TYPE"
+            }
+          ],
+          "samples": [
+            "play music from the {decade}",
+            "play songs from the {decade}",
+            "shuffle the {decade}",
+            "play the {decade}",
+            "play {decade} music",
+            "play some {decade}",
+            "shuffle music from the {decade}"
+          ]
+        },
+        {
+          "name": "AMAZON.ResumeIntent"
+        },
+        {
+          "name": "AMAZON.StopIntent"
+        },
+        {
+          "name": "AMAZON.NextIntent"
+        },
+        {
+          "name": "AMAZON.CancelIntent"
+        },
+        {
+          "name": "AMAZON.HelpIntent"
+        },
+        {
+          "name": "PlayRecentlyPlayedIntent",
+          "slots": [],
+          "samples": [
+            "play music",
+            "play something",
+            "play recently played",
+            "play recently played music",
+            "play my recently played music",
+            "shuffle recently played",
+            "play what I've been listening to",
+            "play my music"
+          ]
+        },
+        {
+          "name": "PlayMostPlayedIntent",
+          "slots": [],
+          "samples": [
+            "play my most played music",
+            "play my most played songs",
+            "play my most played",
+            "play my favorites",
+            "play my top tracks",
+            "play my top songs",
+            "shuffle my most played"
+          ]
+        },
+        {
+          "name": "PlayGenreIntent",
+          "slots": [
+            {
+              "name": "genre",
+              "type": "GENRE_TYPE"
+            }
+          ],
+          "samples": [
+            "play the genre {genre}",
+            "play {genre} music",
+            "play some {genre}",
+            "shuffle {genre}",
+            "shuffle {genre} music",
+            "play {genre} songs"
+          ]
+        },
+        {
+          "name": "PlayRecentlyAddedIntent",
+          "slots": [],
+          "samples": [
+            "play recently added music",
+            "play recently added",
+            "play new music",
+            "play what's new",
+            "play newly added music",
+            "what's new"
+          ]
+        },
+        {
+          "name": "AMAZON.FallbackIntent"
+        }
+      ],
+      "types": [
+        {
+          "name": "GENRE_TYPE",
+          "values": [
+            {"name": {"value": "Rock", "synonyms": ["classic rock", "hard rock", "soft rock"]}},
+            {"name": {"value": "Pop", "synonyms": ["pop music", "top 40"]}},
+            {"name": {"value": "Hip Hop", "synonyms": ["hip-hop", "rap", "hip hop music"]}},
+            {"name": {"value": "Jazz", "synonyms": ["jazz music"]}},
+            {"name": {"value": "Classical", "synonyms": ["classical music", "orchestral"]}},
+            {"name": {"value": "Country", "synonyms": ["country music"]}},
+            {"name": {"value": "Electronic", "synonyms": ["electronic music", "EDM", "techno"]}},
+            {"name": {"value": "R&B", "synonyms": ["R and B", "rhythm and blues", "soul"]}},
+            {"name": {"value": "Metal", "synonyms": ["heavy metal", "metal music"]}},
+            {"name": {"value": "Folk", "synonyms": ["folk music", "acoustic"]}},
+            {"name": {"value": "Blues", "synonyms": ["blues music"]}},
+            {"name": {"value": "Reggae", "synonyms": ["reggae music"]}},
+            {"name": {"value": "Punk", "synonyms": ["punk rock", "punk music"]}},
+            {"name": {"value": "Funk", "synonyms": ["funk music"]}},
+            {"name": {"value": "Latin", "synonyms": ["latin music"]}},
+            {"name": {"value": "Indie", "synonyms": ["indie music", "indie rock", "indie pop"]}},
+            {"name": {"value": "Alternative", "synonyms": ["alternative rock", "alt rock"]}},
+            {"name": {"value": "Dance", "synonyms": ["dance music"]}},
+            {"name": {"value": "Disco", "synonyms": ["disco music"]}},
+            {"name": {"value": "Gospel", "synonyms": ["gospel music"]}},
+            {"name": {"value": "Soundtrack", "synonyms": ["movie soundtrack", "film score"]}}
+          ]
+        },
+        {
+          "name": "DECADE_TYPE",
+          "values": [
+            {
+              "name": {
+                "value": "1950s",
+                "synonyms": [
+                  "fifties",
+                  "the fifties",
+                  "the 1950s"
+                ]
+              }
+            },
+            {
+              "name": {
+                "value": "1960s",
+                "synonyms": [
+                  "sixties",
+                  "the sixties",
+                  "the 1960s"
+                ]
+              }
+            },
+            {
+              "name": {
+                "value": "1970s",
+                "synonyms": [
+                  "seventies",
+                  "the seventies",
+                  "the 1970s"
+                ]
+              }
+            },
+            {
+              "name": {
+                "value": "1980s",
+                "synonyms": [
+                  "eighties",
+                  "the eighties",
+                  "the 1980s"
+                ]
+              }
+            },
+            {
+              "name": {
+                "value": "1990s",
+                "synonyms": [
+                  "nineties",
+                  "the nineties",
+                  "the 1990s"
+                ]
+              }
+            },
+            {
+              "name": {
+                "value": "2000s",
+                "synonyms": [
+                  "two thousands",
+                  "the two thousands",
+                  "the 2000s"
+                ]
+              }
+            },
+            {
+              "name": {
+                "value": "2010s",
+                "synonyms": [
+                  "twenty tens",
+                  "the twenty tens",
+                  "the 2010s"
+                ]
+              }
+            },
+            {
+              "name": {
+                "value": "2020s",
+                "synonyms": [
+                  "twenty twenties",
+                  "the twenty twenties",
+                  "the 2020s"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

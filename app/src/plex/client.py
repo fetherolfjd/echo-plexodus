@@ -1,0 +1,592 @@
+"""
+Plex API client for searching and streaming music.
+"""
+import os
+import random
+import logging
+import secrets as _secrets
+import requests
+from urllib.parse import urljoin, quote
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+
+logger = logging.getLogger(__name__)
+
+PLEX_URL = os.environ.get('PLEX_URL', 'http://YOUR_PLEX_IP:32400')
+
+# Public hostname the app itself is reachable at (whatever sits in front of it —
+# reverse proxy, tunnel, etc. — terminates TLS and forwards here). Used to build
+# the stream/thumb URLs handed to Alexa. Accepts either a bare FQDN or a
+# scheme-prefixed one; https:// is always prepended when building URLs.
+_raw_public_hostname = os.environ.get('SKILL_HOSTNAME', '')
+PUBLIC_HOSTNAME = _raw_public_hostname.removeprefix('https://').removeprefix('http://').rstrip('/')
+
+
+def _read_secret(env_var, default=''):
+    """Read env var value — if it looks like a file path, read the file contents instead."""
+    val = os.environ.get(env_var, default)
+    if val and val.startswith('/'):
+        try:
+            with open(val, 'r') as f:
+                return f.read().strip()
+        except Exception:
+            pass
+    return val.strip()
+
+PLEX_TOKEN = _read_secret('PLEX_TOKEN')
+
+# Secret used to sign stream/thumb URLs so the real Plex token never leaves this
+# server. Set explicitly (same convention as PLEX_TOKEN) so signed links survive
+# a container restart; falls back to a random per-process key with a warning,
+# which just means any in-flight links get invalidated on restart.
+SECRET_KEY = _read_secret('SECRET_KEY')
+if not SECRET_KEY:
+    SECRET_KEY = _secrets.token_hex(32)
+    logger.warning(
+        "SECRET_KEY not set — generated an ephemeral one for this process. "
+        "Stream/thumb links will stop working on restart. Set SECRET_KEY for stable links."
+    )
+
+_STREAM_URL_SALT = 'plex-stream-path'
+_serializer = URLSafeTimedSerializer(SECRET_KEY, salt=_STREAM_URL_SALT)
+
+
+def sign_path(path):
+    """Sign a Plex-relative path (e.g. /library/parts/...) for use in a stream/thumb URL."""
+    return _serializer.dumps(path)
+
+
+def unsign_path(token, max_age):
+    """Recover the original Plex path from a signed token. Raises BadSignature/SignatureExpired."""
+    return _serializer.loads(token, max_age=max_age)
+
+
+SESSION = requests.Session()
+SESSION.headers.update({'Accept': 'application/json', 'X-Plex-Token': PLEX_TOKEN})
+
+
+def _get(path, **kwargs):
+    """Make a GET request to the Plex server."""
+    url = PLEX_URL.rstrip('/') + path
+    try:
+        resp = SESSION.get(url, params=kwargs, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.error(f"Plex API error for {path}: {e}")
+        return None
+
+
+
+def search_tracks(query):
+    """Search for tracks matching the query. Returns list of track dicts."""
+    data = _get('/library/search', query=query, type=10, limit=50)
+    if not data:
+        logger.warning(f"search_tracks: no data returned for query={query!r}")
+        return []
+    mc = data.get('MediaContainer', {})
+    # Plex returns SearchResult[].Metadata, not Metadata[] directly
+    search_results = mc.get('SearchResult', []) or []
+    all_results = [sr['Metadata'] for sr in search_results if 'Metadata' in sr]
+    # Plex occasionally returns albums in a track search — exclude them
+    results = [r for r in all_results if r.get('type') == 'track']
+    if len(results) < len(all_results):
+        logger.info(f"search_tracks: filtered {len(all_results) - len(results)} non-track result(s)")
+    logger.info(f"search_tracks: query={query!r} results={len(results)} first={results[0].get('title') if results else None}")
+    return results
+
+
+def search_artists(query):
+    """Search for artists matching the query. Returns list of artist dicts."""
+    data = _get('/library/search', query=query, type=8, limit=20)
+    if not data:
+        logger.warning(f"search_artists: no data returned for query={query!r}")
+        return []
+    mc = data.get('MediaContainer', {})
+    search_results = mc.get('SearchResult', []) or []
+    results = [sr['Metadata'] for sr in search_results if 'Metadata' in sr]
+    logger.info(f"search_artists: query={query!r} results={len(results)} first={results[0].get('title') if results else None}")
+    return results
+
+
+def search_albums(query):
+    """Search for albums matching the query. Returns list of album dicts."""
+    data = _get('/library/search', query=query, type=9, limit=20)
+    if not data:
+        logger.warning(f"search_albums: no data returned for query={query!r}")
+        return []
+    mc = data.get('MediaContainer', {})
+    search_results = mc.get('SearchResult', []) or []
+    results = [sr['Metadata'] for sr in search_results if 'Metadata' in sr]
+    logger.info(f"search_albums: query={query!r} results={len(results)} first={results[0].get('title') if results else None}")
+    return results
+
+
+def search_playlists(query):
+    """Search for playlists matching the query. Returns list of playlist dicts."""
+    seen = {}
+
+    # Owned playlists
+    data = _get('/playlists/all')
+    if data:
+        for p in data.get('MediaContainer', {}).get('Metadata', []) or []:
+            seen[p['ratingKey']] = p
+
+    # Shared playlists (managed users see these at a different endpoint)
+    shared = _get('/library/shared/all', type=15)
+    if shared:
+        for p in shared.get('MediaContainer', {}).get('Metadata', []) or []:
+            seen[p['ratingKey']] = p
+
+    all_playlists = [p for p in seen.values() if p.get('playlistType') == 'audio']
+    logger.info(f"search_playlists: owned+shared audio playlists={len(all_playlists)} titles={[p.get('title') for p in all_playlists]}")
+
+    query_lower = query.lower()
+    matches = [p for p in all_playlists if query_lower in p.get('title', '').lower()]
+    logger.info(f"search_playlists: matched {len(matches)}: {[p.get('title') for p in matches]}")
+    return matches
+
+
+def get_artist_tracks(artist_rating_key):
+    """Get all tracks for an artist, shuffled. Falls back through albums if allLeaves fails."""
+    data = _get(f'/library/metadata/{artist_rating_key}/allLeaves')
+    if data:
+        mc = data.get('MediaContainer', {})
+        tracks = mc.get('Metadata', []) or []
+        if tracks:
+            logger.info(f"get_artist_tracks: ratingKey={artist_rating_key} found={len(tracks)} via allLeaves")
+            random.shuffle(tracks)
+            return tracks
+
+    # Fall back: get albums then get tracks from each album
+    logger.info(f"get_artist_tracks: falling back to album traversal for ratingKey={artist_rating_key}")
+    albums_data = _get(f'/library/metadata/{artist_rating_key}/children')
+    if not albums_data:
+        return []
+    albums = albums_data.get('MediaContainer', {}).get('Metadata', []) or []
+    all_tracks = []
+    for album in albums:
+        album_key = album.get('ratingKey')
+        if not album_key:
+            continue
+        track_data = _get(f'/library/metadata/{album_key}/children')
+        if track_data:
+            tracks = track_data.get('MediaContainer', {}).get('Metadata', []) or []
+            all_tracks.extend(tracks)
+    logger.info(f"get_artist_tracks: album traversal found {len(all_tracks)} tracks")
+    random.shuffle(all_tracks)
+    return all_tracks
+
+
+def get_album_tracks(album_rating_key):
+    """Get all tracks for an album in order."""
+    data = _get(f'/library/metadata/{album_rating_key}/children')
+    if not data:
+        return []
+    return data.get('MediaContainer', {}).get('Metadata', []) or []
+
+
+def get_playlist_tracks(playlist_rating_key):
+    """Get all tracks in a playlist."""
+    data = _get(f'/playlists/{playlist_rating_key}/items')
+    if not data:
+        return []
+    tracks = data.get('MediaContainer', {}).get('Metadata', []) or []
+    return tracks
+
+
+def get_stream_key(track):
+    """
+    Extract the raw Plex path for a track's audio (e.g. /library/parts/...).
+    This is what gets signed — kept separate from signing so callers can store
+    the bare key and sign it fresh right before each directive is sent, rather
+    than baking a token's expiry into how long it sits in the queue.
+    """
+    try:
+        media_list = track.get('Media') or []
+        if not media_list:
+            logger.error(f"get_stream_key: no Media on track {track.get('title')!r}")
+            return None
+        media = media_list[0]
+
+        # Media can be a dict or an object
+        if hasattr(media, 'part'):
+            parts = media.part or []
+            part = parts[0] if parts else None
+            key = part.key if part and hasattr(part, 'key') else None
+        else:
+            parts = media.get('Part') or []
+            part = parts[0] if parts else None
+            key = part.get('key') if part else None
+
+        if not key:
+            logger.error(f"get_stream_key: no Part key on track {track.get('title')!r} media={media}")
+            return None
+
+        return key
+    except Exception as e:
+        logger.error(f"get_stream_key error for {track.get('title')!r}: {e}", exc_info=True)
+        return None
+
+
+def get_thumb_key(track):
+    """Extract the raw Plex thumbnail path for a track, if any."""
+    return track.get('thumb') or track.get('parentThumb') or track.get('grandparentThumb')
+
+
+def stream_url_for_key(key):
+    """
+    Sign a Plex stream path into a fresh /stream/<token> URL, valid from *now* —
+    call this right before handing a directive to Alexa, not when the queue is built.
+    """
+    if not key:
+        return None
+    if not PUBLIC_HOSTNAME:
+        logger.error("stream_url_for_key: SKILL_HOSTNAME is not set — cannot build a public URL")
+        return None
+    return f"https://{PUBLIC_HOSTNAME}/stream/{sign_path(key)}"
+
+
+def thumb_url_for_key(thumb):
+    """Sign a Plex thumbnail path into a fresh /thumb/<token> URL, valid from *now*."""
+    if not thumb:
+        return None
+    if not PUBLIC_HOSTNAME:
+        logger.error("thumb_url_for_key: SKILL_HOSTNAME is not set — cannot build a public URL")
+        return None
+    return f"https://{PUBLIC_HOSTNAME}/thumb/{sign_path(thumb)}"
+
+
+def track_to_info(track):
+    """Convert a Plex track metadata dict to a simple info dict."""
+    # If Media is missing, fetch full track details using ratingKey
+    if not track.get('Media') and track.get('ratingKey'):
+        data = _get(f'/library/metadata/{track["ratingKey"]}')
+        if data:
+            items = data.get('MediaContainer', {}).get('Metadata', [])
+            if items:
+                fetched = items[0]
+                # If fetched item is an album, get its first track instead
+                if fetched.get('type') == 'album':
+                    logger.info(f"track_to_info: {track.get('title')!r} is an album, fetching tracks")
+                    children = _get(f'/library/metadata/{fetched["ratingKey"]}/children')
+                    if children:
+                        tracks = children.get('MediaContainer', {}).get('Metadata', []) or []
+                        if tracks:
+                            track = tracks[0]
+                            logger.info(f"track_to_info: resolved to track {track.get('title')!r}")
+                else:
+                    track = fetched
+                    logger.info(f"track_to_info: fetched full metadata for {track.get('title')!r}")
+
+    return {
+        'title': track.get('title', 'Unknown'),
+        'artist': track.get('grandparentTitle', track.get('originalTitle', 'Unknown')),
+        'album': track.get('parentTitle', 'Unknown'),
+        'stream_key': get_stream_key(track),
+        'thumb_key': get_thumb_key(track),
+        'rating_key': track.get('ratingKey'),
+        'duration': track.get('duration', 0),
+    }
+
+
+
+def search_tracks_by_decade(decade):
+    """Search for tracks from a given decade via album decade filter."""
+    import re
+    decade_str = str(decade).lower().strip()
+
+    word_map = {
+        'fifties': 1950, 'the fifties': 1950,
+        'sixties': 1960, 'the sixties': 1960,
+        'seventies': 1970, 'the seventies': 1970,
+        'eighties': 1980, 'the eighties': 1980,
+        'nineties': 1990, 'the nineties': 1990,
+        'two thousands': 2000, 'the two thousands': 2000,
+        'twenty tens': 2010, 'the twenty tens': 2010,
+        'twenty twenties': 2020, 'the twenty twenties': 2020,
+    }
+
+    if decade_str in word_map:
+        start_year = word_map[decade_str]
+    else:
+        digits = re.sub(r'[^0-9]', '', decade_str)
+        if not digits:
+            logger.error(f"Could not parse decade: {decade!r}")
+            return []
+        try:
+            start_year = int(digits)
+            if start_year < 100:
+                start_year += 1900
+        except ValueError:
+            logger.error(f"Could not parse decade digits: {digits!r}")
+            return []
+
+    logger.info(f"Decade parsed: {decade!r} -> start_year={start_year}")
+
+    section_key = _get_music_section_key()
+    if not section_key:
+        logger.error("No music section found")
+        return []
+
+    # Plex 'decade' filter on albums uses the decade start year (e.g. 1990 for 90s)
+    data = _get(f'/library/sections/{section_key}/all', type=9, decade=start_year)
+    if not data:
+        return []
+    albums = data.get('MediaContainer', {}).get('Metadata', []) or []
+    logger.info(f"Decade {start_year}: found {len(albums)} albums, fetching tracks...")
+
+    # Shuffle albums then collect tracks (cap at 30 albums to avoid timeout)
+    random.shuffle(albums)
+    all_tracks = []
+    for album in albums[:30]:
+        album_key = album.get('ratingKey')
+        if not album_key:
+            continue
+        track_data = _get(f'/library/metadata/{album_key}/children')
+        if track_data:
+            tracks = track_data.get('MediaContainer', {}).get('Metadata', []) or []
+            all_tracks.extend(tracks)
+
+    logger.info(f"Decade {start_year}: collected {len(all_tracks)} tracks total")
+    random.shuffle(all_tracks)
+    return all_tracks
+def _get_music_section_key():
+    """Get the key for the first music library section."""
+    data = _get('/library/sections')
+    if not data:
+        return None
+    for section in data.get('MediaContainer', {}).get('Directory', []):
+        if section.get('type') == 'artist':
+            return section.get('key')
+    return None
+
+
+def get_recently_played_tracks(limit=100):
+    """Get recently played tracks sorted by lastViewedAt, shuffled. Falls back to random if none played."""
+    section_key = _get_music_section_key()
+    if not section_key:
+        return []
+    data = _get(f'/library/sections/{section_key}/all', type=10, sort='lastViewedAt:desc', limit=limit)
+    if not data:
+        return []
+    tracks = data.get('MediaContainer', {}).get('Metadata', []) or []
+    played = [t for t in tracks if t.get('lastViewedAt')]
+    random.shuffle(played)
+    logger.info(f"get_recently_played_tracks: {len(played)} played tracks")
+    return played
+
+
+def get_most_played_tracks(limit=100):
+    """Get most played tracks sorted by viewCount, shuffled."""
+    section_key = _get_music_section_key()
+    if not section_key:
+        return []
+    data = _get(f'/library/sections/{section_key}/all', type=10, sort='viewCount:desc', limit=limit)
+    if not data:
+        return []
+    tracks = data.get('MediaContainer', {}).get('Metadata', []) or []
+    played = [t for t in tracks if (t.get('viewCount') or 0) > 0]
+    random.shuffle(played)
+    logger.info(f"get_most_played_tracks: {len(played)} tracks")
+    return played
+
+
+def get_random_library_tracks(limit=100):
+    """Get a random sample of tracks from the full library."""
+    section_key = _get_music_section_key()
+    if not section_key:
+        return []
+    data = _get(f'/library/sections/{section_key}/all', type=10, limit=500)
+    if not data:
+        return []
+    tracks = data.get('MediaContainer', {}).get('Metadata', []) or []
+    if len(tracks) > limit:
+        tracks = random.sample(tracks, limit)
+    else:
+        random.shuffle(tracks)
+    logger.info(f"get_random_library_tracks: returning {len(tracks)} tracks")
+    return tracks
+
+
+def _match_genre(section_key, genre_query):
+    """Find the exact genre title from Plex that best matches the query string."""
+    data = _get(f'/library/sections/{section_key}/genre')
+    if not data:
+        return None
+    directories = data.get('MediaContainer', {}).get('Directory', []) or []
+    query_lower = genre_query.lower()
+    for d in directories:
+        if d.get('title', '').lower() == query_lower:
+            return d.get('title')
+    for d in directories:
+        if query_lower in d.get('title', '').lower():
+            return d.get('title')
+    return None
+
+
+def get_tracks_by_genre(genre, limit=100):
+    """Get tracks matching a genre, shuffled. Returns (tracks, matched_genre_title)."""
+    section_key = _get_music_section_key()
+    if not section_key:
+        return [], None
+    matched = _match_genre(section_key, genre)
+    if not matched:
+        logger.warning(f"get_tracks_by_genre: no genre found matching {genre!r}")
+        return [], None
+    data = _get(f'/library/sections/{section_key}/all', type=10, genre=matched, limit=limit)
+    if not data:
+        return [], matched
+    tracks = data.get('MediaContainer', {}).get('Metadata', []) or []
+    random.shuffle(tracks)
+    logger.info(f"get_tracks_by_genre: genre={matched!r} found {len(tracks)} tracks")
+    return tracks, matched
+
+
+def get_recently_added_tracks(limit=100):
+    """Get recently added tracks sorted newest-first.
+
+    Returns (tracks, period) where period is '30_days', '1_year', or 'nothing'.
+    Fetches the top limit tracks by addedAt and filters by date window in Python.
+    """
+    import time
+    section_key = _get_music_section_key()
+    if not section_key:
+        return [], 'no_section'
+    data = _get(f'/library/sections/{section_key}/all', type=10, sort='addedAt:desc', limit=limit)
+    if not data:
+        return [], 'nothing'
+    tracks = data.get('MediaContainer', {}).get('Metadata', []) or []
+
+    now = int(time.time())
+    thirty_days_ago = now - (30 * 24 * 3600)
+    one_year_ago = now - (365 * 24 * 3600)
+
+    recent = [t for t in tracks if (t.get('addedAt') or 0) >= thirty_days_ago]
+    if recent:
+        logger.info(f"get_recently_added_tracks: {len(recent)} tracks in past 30 days")
+        return recent, '30_days'
+
+    past_year = [t for t in tracks if (t.get('addedAt') or 0) >= one_year_ago]
+    if past_year:
+        logger.info(f"get_recently_added_tracks: {len(past_year)} tracks in past year")
+        return past_year, '1_year'
+
+    logger.info("get_recently_added_tracks: no tracks found in past year")
+    return [], 'nothing'
+
+
+def resolve_play_request(query_type, query, artist_filter=None):
+    """
+    Main entry point: given a type and query string, return a list of track info dicts.
+    query_type: 'song', 'artist', 'album', 'playlist'
+    artist_filter: when query_type is 'song', restrict to tracks whose artist matches.
+    Returns (tracks, description) tuple.
+    """
+    query = query.strip()
+    logger.info(f"Resolving play request: type={query_type}, query={query!r}, artist_filter={artist_filter!r}")
+
+    if query_type == 'song':
+        results = search_tracks(query)
+        if not results:
+            return [], f"I couldn't find a song called {query}"
+        if artist_filter:
+            af = artist_filter.lower().strip()
+            filtered = [r for r in results if af in (r.get('grandparentTitle') or '').lower()]
+            if filtered:
+                results = filtered
+            else:
+                logger.info(f"song search: no track matched artist filter {artist_filter!r}; using top result")
+        track_info = track_to_info(results[0])
+        return [track_info], f"Playing {track_info['title']} by {track_info['artist']}"
+
+    elif query_type == 'artist':
+        results = search_artists(query)
+        if not results:
+            return [], f"I couldn't find an artist called {query}"
+        artist = results[0]
+        artist_name = artist.get('title', query)
+        tracks = get_artist_tracks(artist.get('ratingKey'))
+        if not tracks:
+            # Last resort: search tracks by artist name
+            logger.info(f"Artist track lookup failed, falling back to track search for {artist_name!r}")
+            track_results = search_tracks(artist_name)
+            tracks_filtered = [t for t in track_results
+                               if query.lower() in (t.get('grandparentTitle') or '').lower()]
+            if not tracks_filtered:
+                tracks_filtered = track_results
+            if not tracks_filtered:
+                return [], f"I couldn't find any songs for {artist_name}"
+            random.shuffle(tracks_filtered)
+            track_infos = [track_to_info(t) for t in tracks_filtered]
+            return track_infos, f"Shuffling {artist_name}"
+        track_infos = [track_to_info(t) for t in tracks]
+        return track_infos, f"Shuffling {artist_name}"
+
+    elif query_type == 'album':
+        results = search_albums(query)
+        if not results:
+            return [], f"I couldn't find an album called {query}"
+        album = results[0]
+        tracks = get_album_tracks(album.get('ratingKey'))
+        if not tracks:
+            return [], f"I couldn't find any tracks on {album.get('title')}"
+        track_infos = [track_to_info(t) for t in tracks]
+        return track_infos, f"Playing {album.get('title')} by {album.get('parentTitle', 'Unknown')}"
+
+    elif query_type == 'playlist':
+        results = search_playlists(query)
+        if not results:
+            return [], f"I couldn't find a playlist called {query}"
+        playlist = results[0]
+        tracks = get_playlist_tracks(playlist.get('ratingKey'))
+        if not tracks:
+            return [], f"The playlist {playlist.get('title')} appears to be empty"
+        track_infos = [track_to_info(t) for t in tracks]
+        return track_infos, f"Playing playlist {playlist.get('title')}"
+
+    elif query_type == 'decade':
+        tracks = search_tracks_by_decade(query)
+        if not tracks:
+            return [], f"I couldn't find any songs from the {query}"
+        track_infos = [track_to_info(t) for t in tracks]
+        return track_infos, f"Shuffling music from the {query}"
+
+    elif query_type == 'recently_played':
+        tracks = get_recently_played_tracks(limit=100)
+        if not tracks:
+            logger.info("resolve_play_request: no play history, falling back to random library")
+            tracks = get_random_library_tracks(limit=100)
+            if not tracks:
+                return [], "I couldn't find any music in your library"
+            track_infos = [track_to_info(t) for t in tracks]
+            return track_infos, "Shuffling your music library"
+        track_infos = [track_to_info(t) for t in tracks]
+        return track_infos, "Shuffling your recently played music"
+
+    elif query_type == 'most_played':
+        tracks = get_most_played_tracks(limit=100)
+        if not tracks:
+            return [], "I couldn't find any play history in your library"
+        track_infos = [track_to_info(t) for t in tracks]
+        return track_infos, "Shuffling your most played music"
+
+    elif query_type == 'genre':
+        tracks, matched_genre = get_tracks_by_genre(query, limit=100)
+        if not tracks:
+            if matched_genre is None:
+                return [], f"I couldn't find the genre {query} in your library"
+            return [], f"I couldn't find any {matched_genre} tracks"
+        track_infos = [track_to_info(t) for t in tracks]
+        return track_infos, f"Shuffling {matched_genre} music"
+
+    elif query_type == 'recently_added':
+        tracks, period = get_recently_added_tracks(limit=100)
+        if not tracks:
+            if period == 'nothing':
+                return [], "I didn't find any music added in the past year"
+            return [], "I couldn't access your music library"
+        track_infos = [track_to_info(t) for t in tracks]
+        period_label = "the past 30 days" if period == '30_days' else "the past year"
+        return track_infos, f"Playing recently added music from {period_label}"
+
+    return [], "I didn't understand what you wanted to play"
