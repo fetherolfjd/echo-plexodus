@@ -13,6 +13,7 @@ from flask import Flask, request, jsonify, Response, stream_with_context
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+from _version import __version__ as _CODE_VERSION
 from skill.handler import sb
 from plex.client import _get, PLEX_URL, PLEX_TOKEN, unsign_path
 
@@ -26,6 +27,11 @@ app = Flask(__name__)
 
 SKILL_HOSTNAME = os.environ.get('SKILL_HOSTNAME', '')
 PORT = int(os.environ.get('PORT', 5001))
+
+# Version reported by /health, /status and the startup log. The image sets
+# APP_VERSION from the git tag at build time (see .github/workflows/docker-publish.yml);
+# _version.py is the fallback for source checkouts and plain local builds.
+APP_VERSION = os.environ.get('APP_VERSION') or _CODE_VERSION
 DISABLE_VERIFY = os.environ.get('DISABLE_REQUEST_VERIFY', '').lower() in ('1', 'true', 'yes')
 ENABLE_STATUS = os.environ.get('ENABLE_STATUS_PAGE', '').lower() in ('1', 'true', 'yes')
 
@@ -52,6 +58,8 @@ app.config['ASK_SDK_VERIFY_SIGNATURE'] = not DISABLE_VERIFY
 app.config['ASK_SDK_VERIFY_TIMESTAMP'] = not DISABLE_VERIFY
 
 from flask_ask_sdk.skill_adapter import SkillAdapter
+
+logger.info(f"echo-plexodus {APP_VERSION} starting (request verification {'disabled' if DISABLE_VERIFY else 'enabled'})")
 
 skill_adapter = SkillAdapter(
     skill=sb.create(),
@@ -174,6 +182,7 @@ def status():
     internet_ok, internet_detail = _check_internet()
 
     status_data = {
+        'version': APP_VERSION,
         'skill_hostname': SKILL_HOSTNAME,
         'plex_host': PLEX_URL,
         'plex_connected': plex_ok,
@@ -201,6 +210,10 @@ def status():
 </head>
 <body>
     <h1>Plex Alexa Skill</h1>
+    <div class="section">
+        <label>Version</label>
+        <p>{APP_VERSION}</p>
+    </div>
     <div class="section">
         <label>Skill endpoint</label>
         <p>https://{SKILL_HOSTNAME}/skill</p>
@@ -236,7 +249,7 @@ def status():
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok'})
+    return jsonify({'status': 'ok', 'version': APP_VERSION})
 
 
 if __name__ == '__main__':

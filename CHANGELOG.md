@@ -1,8 +1,54 @@
 # Changelog
 
-## 2026-08-28
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Plex PIN-auth script for minting/rotating the token
+Versioned releases start at 1.0.0. Each `## [x.y.z]` heading corresponds to a
+`vx.y.z` git tag and a GitHub Release; the tooling reads these sections
+verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
+**Pre-1.0.0 development log** predate tagging and are kept for detail.
+
+## [Unreleased]
+
+## [1.0.0] - 2026-09-03
+
+First tagged release. Establishes a versioning and release process (git tags,
+GHCR image tags, GitHub Releases) for the state the project has reached as a
+security-focused fork of
+[falk0069/plex-alexa-skill-bridge](https://github.com/falk0069/plex-alexa-skill-bridge).
+
+### Added
+
+- Semantic versioning: `app/src/_version.py` is the single source of truth,
+  surfaced at runtime in `/health` (`{"version": ...}`), on the `/status` page,
+  and in the startup log. The container stamps it from the git tag via the
+  `APP_VERSION` build arg.
+- `.github/workflows/release.yml` — on a `v*` tag, runs the test suite, then
+  cuts a GitHub Release from this file's matching section.
+- `docker-publish.yml` now also fires on `v*` tags and publishes
+  `ghcr.io/<repo>:x.y.z` and `:x.y` alongside `:latest` and `:sha-<sha>`, with
+  OCI image labels. Both release paths fail if the tag and `_version.py` disagree.
+
+### Changed compared to upstream (carried forward from the pre-1.0.0 log below)
+
+- The real Plex token no longer leaves the container: signed, short-lived
+  `/stream/<token>` and `/thumb/<token>` proxy URLs replace embedding
+  `X-Plex-Token` in URLs handed to Alexa; tokens are minted fresh per directive.
+- `scripts/get_plex_token.py` PIN-auth flow for minting/rotating the token.
+- Full unit + end-to-end test suite (fakes both Alexa and Plex).
+- `DISABLE_REQUEST_VERIFY` now actually disables verification (both Flask config
+  keys are set, not just the verifiers list).
+- Repo scope narrowed to the app/container; hosting and orchestration are out of
+  scope.
+
+## Pre-1.0.0 development log
+
+These dated entries predate semantic versioning and are kept for detail.
+
+### 2026-08-28
+
+#### Plex PIN-auth script for minting/rotating the token
 
 Added `app/scripts/get_plex_token.py`, a standalone CLI implementing Plex's PIN-based device-linking flow (`POST /api/v2/pins`, poll `GET /api/v2/pins/<id>` until `authToken` is set) as an alternative to digging `X-Plex-Token` out of browser devtools. Deliberately not a route on the running app — it's a one-off setup/rotation step, and adding a public auth-flow endpoint to the container would expand its exposed surface for something run rarely, not as part of normal operation.
 
@@ -15,9 +61,9 @@ README's "Get your Plex token" now leads with this script and keeps the devtools
 
 ---
 
-## 2026-08-27 (2)
+### 2026-08-27 (2)
 
-### Test suite: unit tests + an end-to-end test faking both Alexa and Plex
+#### Test suite: unit tests + an end-to-end test faking both Alexa and Plex
 
 Added `app/tests/` (pytest, run via `cd app && pip install -r requirements-dev.txt && pytest -v`) and a CI workflow to run it on every push/PR touching `app/**`.
 
@@ -31,9 +77,9 @@ Also surfaced, not fixed (documented in the README instead): `ask-sdk-webservice
 
 ---
 
-## 2026-08-27
+### 2026-08-27
 
-### Sign stream/thumb tokens fresh per directive instead of once per queue
+#### Sign stream/thumb tokens fresh per directive instead of once per queue
 
 Signed `/stream` and `/thumb` URLs (see 2026-08-26 below) were minted once when a queue was built and then reused verbatim from the queue's in-memory track dicts for every later directive — including `PlaybackNearlyFinishedHandler`, `ResumeIntentHandler`, and `NextIntentHandler`. Since queues can run up to 100 tracks (5–7 hours of playback), a token minted at queue-build time could expire before a later track's turn came up, or before a long-paused session was resumed — surfacing as a `410 Link expired` and a failed track instead of anything seamless.
 
@@ -44,9 +90,9 @@ Signed `/stream` and `/thumb` URLs (see 2026-08-26 below) were minted once when 
 
 ---
 
-## 2026-08-26
+### 2026-08-26
 
-### Stop exposing the Plex token, and narrow this repo's scope to "the app"
+#### Stop exposing the Plex token, and narrow this repo's scope to "the app"
 
 The Plex token was being embedded directly in stream/thumbnail URLs (`?X-Plex-Token=...`) handed to Alexa, and the reverse proxy forwarded `/library/parts/` and `/library/metadata/` straight to Plex — meaning a real, non-expiring, full-account credential sat in every audio URL, Alexa's infrastructure, and access logs indefinitely.
 
@@ -58,9 +104,9 @@ The Plex token was being embedded directly in stream/thumbnail URLs (`?X-Plex-To
 
 ---
 
-## 2026-05-10
+### 2026-05-10
 
-### Song-by-artist disambiguation
+#### Song-by-artist disambiguation
 
 Voice commands like "play the song baby by Justin Bieber" were being routed to the artist slot only, so the skill would shuffle the artist instead of playing the requested song. Alexa's NLU was dropping the song title because no sample utterance combined both slots, and short ambiguous song titles (e.g. "baby") tended to resolve as artists.
 
@@ -71,9 +117,9 @@ Voice commands like "play the song baby by Justin Bieber" were being routed to t
 
 ---
 
-## 2026-04-26
+### 2026-04-26
 
-### New Discovery Commands
+#### New Discovery Commands
 
 Added four new voice commands using Plex API sort and filter parameters:
 
@@ -86,12 +132,12 @@ Also added `GENRE_TYPE` custom slot type to the Alexa interaction model with 22 
 
 ---
 
-## Development History
+### Development History
 
 This project was built collaboratively with Claude AI (Anthropic) as a replacement
 for the official Plex Alexa skill after Plex announced its discontinuation.
 
-### Core Features Built
+#### Core Features Built
 - Flask + ask-sdk skill endpoint with proper Alexa AudioPlayer integration
 - Plex API client with search for artists, albums, tracks, playlists
 - Per-device in-memory queue manager for independent multi-device playback
@@ -100,13 +146,13 @@ for the official Plex Alexa skill after Plex announced its discontinuation.
 - Fallback logic for tracks returned as album ratingKeys by Plex search
 - Full track metadata fetch when search returns lightweight results
 
-### Infrastructure
+#### Infrastructure
 - Docker container with gunicorn (single worker, 4 threads for shared queue state)
 - Apache reverse proxy with path-based routing and HTTP method restrictions
 - Docker secrets for Plex token
 - iptables auto-heal script for Docker FORWARD chain bug on Linux
 
-### Known Issues Fixed
+#### Known Issues Fixed
 - ask-sdk-webservice-support API compatibility (WebserviceSkillHandler vs SkillAdapter)
 - Plex search returns SearchResult[].Metadata not Metadata[] directly
 - Queue split-brain with multiple gunicorn workers

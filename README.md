@@ -20,13 +20,13 @@ Full details, including bugs found along the way (an unmaintained `oscrypto` dep
 
 ## Features
 
-- 🎵 **Play by artist** — "Alexa, ask Plex to play the artist Creed"
-- 💿 **Play by album** — "Alexa, ask Plex to play the album Dirt"
-- 🎶 **Play by song** — "Alexa, ask Plex to play the song Africa" (or "play the song Baby by Justin Bieber" to disambiguate)
+- 🎵 **Play by artist** — "Alexa, ask Plex to play the artist Metallica"
+- 💿 **Play by album** — "Alexa, ask Plex to play the album Master of Puppets"
+- 🎶 **Play by song** — "Alexa, ask Plex to play the song Enter Sandman" (or "play the song One by Metallica" to disambiguate)
 - 📋 **Play playlists** — "Alexa, ask Plex to play the playlist Road Trip"
-- 🔀 **Shuffle artists** — "Alexa, ask Plex to shuffle Fleetwood Mac"
+- 🔀 **Shuffle artists** — "Alexa, ask Plex to shuffle Iron Maiden"
 - 📅 **Play by decade** — "Alexa, ask Plex to play music from the 1990s"
-- 🎸 **Play by genre** — "Alexa, ask Plex to play some Rock"
+- 🎸 **Play by genre** — "Alexa, ask Plex to play some Metal"
 - 🕐 **Recently played** — "Alexa, ask Plex to play music" starts your recently played, shuffled
 - ⭐ **Most played** — "Alexa, ask Plex to play my most played music"
 - ✨ **Recently added** — "Alexa, ask Plex to play recently added music"
@@ -73,6 +73,7 @@ echo-plexodus/
 │   ├── pytest.ini
 │   ├── src/
 │   │   ├── app.py              # Flask application entry point + streaming proxy
+│   │   ├── _version.py         # __version__ — single source of truth (see RELEASING.md)
 │   │   ├── plex/
 │   │   │   └── client.py       # Plex API client (search, streaming, signed URLs)
 │   │   └── skill/
@@ -84,6 +85,8 @@ echo-plexodus/
 ├── interaction_model.json      # Alexa skill interaction model
 ├── secrets/
 │   └── plex_token.txt.example  # Example of the file-based secret format the app reads
+├── CHANGELOG.md
+├── RELEASING.md                # How releases are versioned, tagged, and published
 └── README.md
 ```
 
@@ -164,7 +167,7 @@ Port 5001 is unprivileged, so rootless Podman binds it without extra config. Wha
 
 Route the whole hostname (`https://YOUR_HOSTNAME/*`) to the container's port 5001 — the app itself only defines `/skill`, `/stream/<token>`, `/thumb/<token>`, `/status`, and `/health`; everything else 404s on its own, so no path allowlisting needs to live in the proxy. Terminate TLS there; traffic between the proxy and this container can stay plain HTTP if they're on a trusted network.
 
-Verify it's up: `curl https://YOUR_HOSTNAME/health`
+Verify it's up: `curl https://YOUR_HOSTNAME/health` → `{"status": "ok", "version": "1.0.0"}` (the `version` tells you which release is actually running).
 
 ### 5. Create the Alexa skill
 
@@ -196,16 +199,16 @@ Watch the logs: `docker logs echo-plexodus -f` (or `podman logs echo-plexodus -f
 
 | Say | What happens |
 |-----|-------------|
-| `ask Plex to play the artist Taylor Swift` | Shuffles all Taylor Swift songs |
-| `ask Plex to play the album Rumours` | Plays album in order |
-| `ask Plex to play the song Africa` | Plays that song |
-| `ask Plex to play the song Baby by Justin Bieber` | Plays that song, narrowed by artist |
+| `ask Plex to play the artist Metallica` | Shuffles all Metallica songs |
+| `ask Plex to play the album Master of Puppets` | Plays album in order |
+| `ask Plex to play the song Enter Sandman` | Plays that song |
+| `ask Plex to play the song One by Metallica` | Plays that song, narrowed by artist |
 | `ask Plex to play the playlist Road Trip` | Plays playlist |
-| `ask Plex to shuffle Bon Jovi` | Shuffles all Bon Jovi songs |
+| `ask Plex to shuffle Iron Maiden` | Shuffles all Iron Maiden songs |
 | `ask Plex to play music from the 1980s` | Shuffles 80s music |
 | `ask Plex to play music from the nineties` | Shuffles 90s music |
-| `ask Plex to play some Rock` | Shuffles up to 100 Rock tracks |
-| `ask Plex to play Jazz music` | Shuffles up to 100 Jazz tracks |
+| `ask Plex to play some Metal` | Shuffles up to 100 Metal tracks |
+| `ask Plex to play Heavy Metal music` | Shuffles up to 100 Heavy Metal tracks |
 | `ask Plex to play music` | Shuffles your 100 most recently played tracks (falls back to random if no history) |
 | `ask Plex to play recently played music` | Same as above |
 | `ask Plex to play my most played music` | Shuffles your 100 most-played tracks |
@@ -307,6 +310,18 @@ docker run -d --name echo-plexodus -p 5001:5001 --env-file ../.env echo-plexodus
 podman build -t echo-plexodus .
 podman run -d --name echo-plexodus -p 5001:5001 --env-file ../.env echo-plexodus
 ```
+
+## Releases & versioning
+
+Releases follow [SemVer](https://semver.org/) as `vMAJOR.MINOR.PATCH` git tags, each with a matching [CHANGELOG.md](CHANGELOG.md) section and a GitHub Release. Published images:
+
+```
+ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:1.2.3   # exact release
+ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:1.2     # latest patch in a minor line
+ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:latest  # latest main build
+```
+
+Pin a specific tag in production and check `curl https://YOUR_HOSTNAME/health` after deploying to confirm the running `version`. The full process is in [RELEASING.md](RELEASING.md).
 
 ## Contributing
 

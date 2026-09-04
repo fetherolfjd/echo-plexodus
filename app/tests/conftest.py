@@ -14,6 +14,7 @@ os.environ.setdefault('PLEX_TOKEN', 'test-real-plex-token-should-never-leak')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-signing-not-for-prod')
 os.environ.setdefault('DISABLE_REQUEST_VERIFY', 'true')  # no real Amazon signature in tests
 os.environ.setdefault('STREAM_TOKEN_TTL_SECONDS', '3600')
+os.environ.pop('APP_VERSION', None)  # tests assert the value compiled in from _version.py
 
 import pytest
 

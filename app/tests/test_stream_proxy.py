@@ -97,6 +97,8 @@ def test_skill_route_rejects_get(flask_client):
 
 
 def test_health_endpoint(flask_client):
+    from _version import __version__
+
     resp = flask_client.get('/health')
     assert resp.status_code == 200
-    assert resp.get_json() == {'status': 'ok'}
+    assert resp.get_json() == {'status': 'ok', 'version': __version__}
