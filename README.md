@@ -113,19 +113,27 @@ This token is indistinguishable from your own browser session as far as Plex is 
 
 ### 2. Build or pull the image
 
+Every `docker` command below works the same with `podman` — swap the binary name. Podman examples are shown alongside; if you use Podman regularly, `alias docker=podman` and ignore the distinction.
+
 ```bash
 git clone https://github.com/YOUR_GITHUB_USERNAME/echo-plexodus.git
 cd echo-plexodus/app
+
+# Docker
 docker build -t echo-plexodus .
+
+# Podman
+podman build -t echo-plexodus .
 ```
 
-Or pull the published image: `ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:latest`.
+Or pull the published image: `ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:latest` (`docker pull` / `podman pull`).
 
 ### 3. Run the container
 
 At minimum it needs the environment variables in [Environment Variables](#environment-variables) below, and a Plex token available either as `PLEX_TOKEN` directly or as a bind-mounted file referenced by `PLEX_TOKEN` (the app reads the file if the value looks like a path — see `secrets/plex_token.txt.example`). For example:
 
 ```bash
+# Docker
 docker run -d --name echo-plexodus \
   -p 5001:5001 \
   -e SKILL_HOSTNAME=plex.your-domain.example \
@@ -137,7 +145,20 @@ docker run -d --name echo-plexodus \
   echo-plexodus
 ```
 
-Whatever runs this in practice (Compose, Ansible, a systemd unit) just needs to supply the same environment and put `https://YOUR_HOSTNAME/` in front of port 5001.
+```bash
+# Podman (rootless) — same flags, plus :Z on the mount if the host uses SELinux
+podman run -d --name echo-plexodus \
+  -p 5001:5001 \
+  -e SKILL_HOSTNAME=plex.your-domain.example \
+  -e PLEX_URL=http://YOUR_PLEX_IP:32400 \
+  -e PLEX_TOKEN=/run/secrets/plex_token \
+  -e SECRET_KEY=some-long-random-string \
+  -e TZ=America/Chicago \
+  -v "$(pwd)/../secrets/plex_token.txt:/run/secrets/plex_token:ro,Z" \
+  echo-plexodus
+```
+
+Port 5001 is unprivileged, so rootless Podman binds it without extra config. Whatever runs this in practice (Compose, Ansible, a `podman generate systemd` / Quadlet unit) just needs to supply the same environment and put `https://YOUR_HOSTNAME/` in front of port 5001.
 
 ### 4. Point your reverse proxy at it
 
@@ -159,7 +180,9 @@ Verify it's up: `curl https://YOUR_HOSTNAME/health`
 6. In **Build → Endpoint**:
    - Select **HTTPS**
    - Default endpoint: `https://YOUR_HOSTNAME/skill`
-   - Certificate: **My development endpoint has a certificate from a trusted certificate authority**
+   - Certificate (choose appropriate entry):
+     - **My development endpoint has a certificate from a trusted certificate authority**
+     - **My development endpoint is a sub-domain of a domain that has a wildcard certificate from a certificate authority**
 7. Click **Save Endpoints**
 8. In the **Test** tab, set testing to **Development**
 
@@ -167,7 +190,7 @@ Verify it's up: `curl https://YOUR_HOSTNAME/health`
 
 Say to your Echo: **"Alexa, ask Plex to play the artist [any artist in your library]"**
 
-Watch the logs: `docker logs echo-plexodus -f`
+Watch the logs: `docker logs echo-plexodus -f` (or `podman logs echo-plexodus -f`)
 
 ## Voice Commands
 
@@ -198,7 +221,7 @@ Watch the logs: `docker logs echo-plexodus -f`
 ### "I couldn't find that artist/song"
 - Plex search is case-insensitive but spelling matters
 - Try the exact name as it appears in your Plex library
-- Check logs: `docker logs echo-plexodus -f`
+- Check logs: `docker logs echo-plexodus -f` (or `podman logs echo-plexodus -f`)
 
 ### "There was a problem with the requested skill's response"
 - Check the skill has AudioPlayer interface enabled in the developer console
@@ -218,6 +241,7 @@ Make sure you're using `--workers 1` in the Dockerfile CMD. Multiple workers hav
 `ask-sdk-webservice-support`'s certificate verifier depends on `certvalidator` → `oscrypto`, and `oscrypto` (unmaintained since ~2020) fails to parse OpenSSL version strings with a two-digit patch number — it throws `LibraryNotFoundError` on import, before `DISABLE_REQUEST_VERIFY` is ever checked, so this is a hard crash rather than a soft verification failure. Confirmed fine as of writing on the `python:3.11-slim` base image (OpenSSL 3.5.6), but the base image's OpenSSL version isn't pinned by this project, so a future rebuild landing on a version like 3.0.10+ could reintroduce it with no code change to explain it. If the container starts crash-looping right after a rebuild, check this first:
 
 ```bash
+# swap docker for podman if that's what you're running
 docker run --rm echo-plexodus python -c "import oscrypto; print('oscrypto imported fine')"
 docker run --rm echo-plexodus python -c "import ssl; print(ssl.OPENSSL_VERSION)"
 ```
@@ -274,8 +298,14 @@ One caveat surfaced while writing these: `ask-sdk-webservice-support`'s certific
 ```bash
 git clone https://github.com/YOUR_GITHUB_USERNAME/echo-plexodus.git
 cd echo-plexodus/app
+
+# Docker
 docker build -t echo-plexodus .
 docker run -d --name echo-plexodus -p 5001:5001 --env-file ../.env echo-plexodus
+
+# Podman
+podman build -t echo-plexodus .
+podman run -d --name echo-plexodus -p 5001:5001 --env-file ../.env echo-plexodus
 ```
 
 ## Contributing
