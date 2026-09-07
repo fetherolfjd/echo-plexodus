@@ -72,8 +72,24 @@
             "play playlist {playlist}",
             "play my playlist {playlist}",
             "put on the playlist {playlist}",
-            "start the playlist {playlist}",
-            "shuffle the playlist {playlist}"
+            "start the playlist {playlist}"
+          ]
+        },
+        {
+          "name": "ShufflePlaylistIntent",
+          "slots": [
+            {
+              "name": "playlist",
+              "type": "AMAZON.SearchQuery"
+            }
+          ],
+          "samples": [
+            "shuffle the playlist {playlist}",
+            "shuffle playlist {playlist}",
+            "shuffle my playlist {playlist}",
+            "play the playlist {playlist} on shuffle",
+            "randomize the playlist {playlist}",
+            "random playlist {playlist}"
           ]
         },
         {

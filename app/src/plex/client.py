@@ -475,11 +475,13 @@ def get_recently_added_tracks(limit=100):
     return [], 'nothing'
 
 
-def resolve_play_request(query_type, query, artist_filter=None):
+def resolve_play_request(query_type, query, artist_filter=None, shuffle=False):
     """
     Main entry point: given a type and query string, return a list of track info dicts.
     query_type: 'song', 'artist', 'album', 'playlist'
     artist_filter: when query_type is 'song', restrict to tracks whose artist matches.
+    shuffle: when query_type is 'playlist', randomize track order instead of playing
+    the playlist's own order.
     Returns (tracks, description) tuple.
     """
     query = query.strip()
@@ -541,8 +543,12 @@ def resolve_play_request(query_type, query, artist_filter=None):
         tracks = get_playlist_tracks(playlist.get('ratingKey'))
         if not tracks:
             return [], f"The playlist {playlist.get('title')} appears to be empty"
+        if shuffle:
+            tracks = list(tracks)
+            random.shuffle(tracks)
         track_infos = [track_to_info(t) for t in tracks]
-        return track_infos, f"Playing playlist {playlist.get('title')}"
+        verb = "Shuffling" if shuffle else "Playing"
+        return track_infos, f"{verb} playlist {playlist.get('title')}"
 
     elif query_type == 'decade':
         tracks = search_tracks_by_decade(query)

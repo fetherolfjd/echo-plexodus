@@ -11,6 +11,21 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
 
 ## [Unreleased]
 
+### Added
+
+- New `ShufflePlaylistIntent` for "ask Plex to shuffle the playlist X" — plays
+  the playlist's tracks in random order instead of its stored order.
+
+### Fixed
+
+- "Shuffle the playlist X" previously just played the playlist in its stored
+  order like a plain "play the playlist X" would: the sample utterance shared
+  `PlayPlaylistIntent`, whose handler had no way to tell "shuffle" and "play"
+  apart since only the intent name (not the slot) carries that signal. Shuffle
+  now has its own intent, the same pattern `ShuffleArtistIntent` already uses
+  relative to `PlayMusicIntent`. **Requires rebuilding the interaction model**
+  for existing deployments to pick this up.
+
 ## [1.1.0] - 2026-09-07
 
 ### Changed

@@ -161,6 +161,49 @@ def test_resolve_play_request_artist_not_found(requests_mock):
     assert 'Nobody' in description
 
 
+def _playlist_metadata(rating_key, title):
+    return {'ratingKey': rating_key, 'title': title, 'playlistType': 'audio'}
+
+
+def _stub_playlist_search_and_items(requests_mock, rating_key, title, tracks):
+    base = client.PLEX_URL.rstrip('/')
+    requests_mock.get(f'{base}/playlists/all', json={
+        'MediaContainer': {'Metadata': [_playlist_metadata(rating_key, title)]}
+    })
+    requests_mock.get(f'{base}/library/shared/all', json={'MediaContainer': {}})
+    requests_mock.get(f'{base}/playlists/{rating_key}/items', json=_all_leaves(tracks))
+
+
+def test_resolve_play_request_playlist_plays_in_original_order(requests_mock):
+    _stub_playlist_search_and_items(requests_mock, '500', 'Road Trip', [
+        _track_metadata('301', 'First', 'Artist A', '/library/parts/3/1/first.mp3'),
+        _track_metadata('302', 'Second', 'Artist B', '/library/parts/3/2/second.mp3'),
+    ])
+
+    tracks, description = client.resolve_play_request('playlist', 'Road Trip')
+
+    assert description == 'Playing playlist Road Trip'
+    assert [t['title'] for t in tracks] == ['First', 'Second']
+
+
+def test_resolve_play_request_playlist_shuffle_randomizes_order(requests_mock, monkeypatch):
+    """shuffle=True (the ShufflePlaylistIntent path) must actually reorder the
+    playlist's tracks, not just relabel the same in-order list."""
+    _stub_playlist_search_and_items(requests_mock, '500', 'Road Trip', [
+        _track_metadata('301', 'First', 'Artist A', '/library/parts/3/1/first.mp3'),
+        _track_metadata('302', 'Second', 'Artist B', '/library/parts/3/2/second.mp3'),
+    ])
+
+    shuffle_calls = []
+    monkeypatch.setattr(client.random, 'shuffle', lambda seq: (shuffle_calls.append(True), seq.reverse()))
+
+    tracks, description = client.resolve_play_request('playlist', 'Road Trip', shuffle=True)
+
+    assert shuffle_calls == [True]
+    assert description == 'Shuffling playlist Road Trip'
+    assert [t['title'] for t in tracks] == ['Second', 'First']
+
+
 def test_internal_plex_requests_send_token_as_header_not_query_param(requests_mock):
     base = client.PLEX_URL.rstrip('/')
     requests_mock.get(f'{base}/library/search', json={'MediaContainer': {}})

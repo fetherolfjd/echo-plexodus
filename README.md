@@ -24,7 +24,7 @@ Full details, including bugs found along the way (an unmaintained `oscrypto` dep
 - 💿 **Play by album** — "Alexa, ask Plex to play the album Master of Puppets"
 - 🎶 **Play by song** — "Alexa, ask Plex to play the song Enter Sandman" (or "play the song One by Metallica" to disambiguate)
 - 📋 **Play playlists** — "Alexa, ask Plex to play the playlist Road Trip"
-- 🔀 **Shuffle artists** — "Alexa, ask Plex to shuffle Iron Maiden"
+- 🔀 **Shuffle artists or playlists** — "Alexa, ask Plex to shuffle Iron Maiden" or "shuffle the playlist Road Trip"
 - 📅 **Play by decade** — "Alexa, ask Plex to play music from the 1990s"
 - 🎸 **Play by genre** — "Alexa, ask Plex to play some Metal"
 - 🕐 **Recently played** — "Alexa, ask Plex to play music" starts your recently played, shuffled
@@ -203,7 +203,8 @@ Watch the logs: `docker logs echo-plexodus -f` (or `podman logs echo-plexodus -f
 | `ask Plex to play the album Master of Puppets` | Plays album in order |
 | `ask Plex to play the song Enter Sandman` | Plays that song |
 | `ask Plex to play the song One by Metallica` | Plays that song, narrowed by artist |
-| `ask Plex to play the playlist Road Trip` | Plays playlist |
+| `ask Plex to play the playlist Road Trip` | Plays playlist in its own order |
+| `ask Plex to shuffle the playlist Road Trip` | Plays playlist in random order |
 | `ask Plex to shuffle Iron Maiden` | Shuffles all Iron Maiden songs |
 | `ask Plex to play music from the 1980s` | Shuffles 80s music |
 | `ask Plex to play music from the nineties` | Shuffles 90s music |

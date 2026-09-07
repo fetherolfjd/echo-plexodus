@@ -58,6 +58,10 @@ def play_playlist_envelope(playlist):
     return intent_envelope('PlayPlaylistIntent', slots={'playlist': playlist})
 
 
+def shuffle_playlist_envelope(playlist):
+    return intent_envelope('ShufflePlaylistIntent', slots={'playlist': playlist})
+
+
 def audio_player_envelope(request_type, token, offset_ms=0, request_id='amzn1.echo-api.request.audioplayer'):
     """
     An out-of-session AudioPlayer request (PlaybackNearlyFinished, PlaybackFinished,

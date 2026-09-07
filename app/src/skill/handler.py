@@ -281,6 +281,44 @@ class PlayPlaylistIntentHandler(AbstractRequestHandler):
         return _speak_and_play(handler_input, tracks, description)
 
 
+class ShufflePlaylistIntentHandler(AbstractRequestHandler):
+    """Handles: shuffle the playlist [name]
+
+    Kept separate from PlayPlaylistIntent (not just an extra sample utterance
+    on it) for the same reason ShuffleArtistIntent is separate from
+    PlayMusicIntent: the intent name is the only thing that tells the handler
+    "shuffle" was said rather than "play" — the slot itself carries no such
+    signal, so "play" and "shuffle" phrasings can't share an intent.
+    """
+
+    def can_handle(self, handler_input):
+        return is_intent_name("ShufflePlaylistIntent")(handler_input)
+
+    def handle(self, handler_input):
+        slots = handler_input.request_envelope.request.intent.slots or {}
+        playlist_slot = slots.get('playlist')
+        query = playlist_slot.value if playlist_slot else None
+
+        if not query:
+            return (
+                handler_input.response_builder
+                .speak("Which playlist would you like to shuffle?")
+                .ask("Which playlist?")
+                .response
+            )
+
+        tracks, description = resolve_play_request('playlist', query, shuffle=True)
+        if not tracks:
+            return (
+                handler_input.response_builder
+                .speak(_ssml_escape(description) + ". Please try again.")
+                .ask("What would you like to play?")
+                .response
+            )
+
+        return _speak_and_play(handler_input, tracks, description)
+
+
 class PlayDecadeIntentHandler(AbstractRequestHandler):
     """Handles: play music from the [decade]s"""
 
@@ -635,6 +673,7 @@ sb.add_request_handler(LaunchRequestHandler())
 sb.add_request_handler(PlayMusicIntentHandler())
 sb.add_request_handler(ShuffleArtistIntentHandler())
 sb.add_request_handler(PlayPlaylistIntentHandler())
+sb.add_request_handler(ShufflePlaylistIntentHandler())
 sb.add_request_handler(PlayDecadeIntentHandler())
 sb.add_request_handler(PlayRecentlyPlayedIntentHandler())
 sb.add_request_handler(PlayMostPlayedIntentHandler())

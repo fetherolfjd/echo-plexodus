@@ -11,7 +11,10 @@ import xml.etree.ElementTree as ET
 from plex import client as plex_client
 from skill import queue as skill_queue
 
-from alexa_envelopes import USER_ID, play_music_envelope, play_playlist_envelope, audio_player_envelope
+from alexa_envelopes import (
+    USER_ID, play_music_envelope, play_playlist_envelope, shuffle_playlist_envelope,
+    audio_player_envelope,
+)
 
 
 def _plex_url(path):
@@ -173,6 +176,53 @@ def test_play_playlist_end_to_end(flask_client, requests_mock, plex_token):
     audio_resp = flask_client.get(_path_from_public_url(stream['url']))
     assert audio_resp.status_code == 200
     assert audio_resp.data == b'--fake-mp3-bytes-for-highway--'
+
+
+def test_shuffle_playlist_end_to_end(flask_client, requests_mock, plex_token):
+    """
+    "Alexa, ask Plex to shuffle the playlist Road Trip" is a distinct
+    ShufflePlaylistIntent from PlayPlaylistIntent — the slot alone can't carry
+    "shuffle vs. play in order", so it needs its own intent, same as
+    ShuffleArtistIntent vs. PlayMusicIntent's artist branch. Track-order
+    randomization itself is covered at the client level
+    (test_resolve_play_request_playlist_shuffle_randomizes_order); this proves
+    the intent is wired up end-to-end and speaks "Shuffling", not "Playing".
+    """
+    requests_mock.get(_plex_url('/playlists/all'), json={
+        'MediaContainer': {
+            'Metadata': [{'ratingKey': '500', 'title': 'Road Trip', 'playlistType': 'audio'}],
+        }
+    })
+    requests_mock.get(_plex_url('/library/shared/all'), json={'MediaContainer': {}})
+    requests_mock.get(_plex_url('/playlists/500/items'), json={
+        'MediaContainer': {
+            'Metadata': [
+                _track_metadata('301', 'Life Is a Highway', 'Rascal Flatts', '/library/parts/3/1/highway.mp3', '/library/metadata/301/thumb/1'),
+                _track_metadata('302', 'Free Fallin', 'Tom Petty', '/library/parts/3/2/freefallin.mp3', '/library/metadata/302/thumb/1'),
+            ]
+        }
+    })
+    requests_mock.get(
+        _plex_url('/library/parts/3/1/highway.mp3'),
+        content=b'--fake-mp3-bytes-for-highway--',
+        headers={'Content-Type': 'audio/mpeg'},
+    )
+    requests_mock.get(
+        _plex_url('/library/parts/3/2/freefallin.mp3'),
+        content=b'--fake-mp3-bytes-for-freefallin--',
+        headers={'Content-Type': 'audio/mpeg'},
+    )
+
+    resp = flask_client.post('/skill', json=shuffle_playlist_envelope('Road Trip'))
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert plex_token not in json.dumps(body)
+    assert 'Shuffling playlist Road Trip' in body['response']['outputSpeech']['ssml']
+    assert skill_queue.get_queue_length(USER_ID) == 2
+
+    stream = _extract_play_directive(body)
+    audio_resp = flask_client.get(_path_from_public_url(stream['url']))
+    assert audio_resp.status_code == 200
 
 
 def test_playback_nearly_finished_enqueues_next_track_with_working_url(flask_client, requests_mock, plex_token):
