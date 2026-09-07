@@ -5,11 +5,13 @@ and proves the whole loop works — including that the real Plex token never app
 anywhere in what Alexa sees.
 """
 import json
+import re
+import xml.etree.ElementTree as ET
 
 from plex import client as plex_client
 from skill import queue as skill_queue
 
-from alexa_envelopes import USER_ID, play_music_envelope, audio_player_envelope
+from alexa_envelopes import USER_ID, play_music_envelope, play_playlist_envelope, audio_player_envelope
 
 
 def _plex_url(path):
@@ -98,6 +100,79 @@ def test_play_artist_end_to_end(flask_client, requests_mock, plex_token):
     # it just never went anywhere Alexa (or this test, playing Alexa) could see it.
     upstream_request = requests_mock.request_history[-1]
     assert upstream_request.headers['X-Plex-Token'] == plex_token
+
+
+def test_play_artist_with_ampersand_in_name_end_to_end(flask_client, requests_mock, plex_token):
+    """
+    ask-sdk's speak() wraps whatever text it's given in <speak>...</speak> with no
+    XML escaping of its own, so an unescaped artist name like "Mumford & Sons" would
+    produce invalid SSML and Alexa would reject the whole response ("There was a
+    problem with the requested skill's response"). Confirms handler._ssml_escape is
+    applied before text reaches speak().
+    """
+    requests_mock.get(_plex_url('/library/search'), json=_search_result('600', 'Mumford & Sons', 'artist'))
+    requests_mock.get(_plex_url('/library/metadata/600/allLeaves'), json={
+        'MediaContainer': {
+            'Metadata': [
+                _track_metadata('601', 'I Will Wait', 'Mumford & Sons', '/library/parts/6/1/wait.mp3', '/library/metadata/601/thumb/1'),
+            ]
+        }
+    })
+    requests_mock.get(
+        _plex_url('/library/parts/6/1/wait.mp3'),
+        content=b'--fake-mp3-bytes-for-wait--',
+        headers={'Content-Type': 'audio/mpeg'},
+    )
+
+    resp = flask_client.post('/skill', json=play_music_envelope(artist='Mumford & Sons'))
+    assert resp.status_code == 200
+    body = resp.get_json()
+
+    ssml = body['response']['outputSpeech']['ssml']
+    assert '&amp;' in ssml
+    # A bare "&" not part of a recognized entity is invalid XML on its own — this
+    # catches any other unescaped call site, not just the one this test happens to hit.
+    assert not re.search(r'&(?!amp;|lt;|gt;|#\d+;|#x[0-9a-fA-F]+;)', ssml)
+    ET.fromstring(ssml)  # raises ParseError if the SSML isn't well-formed
+
+
+def test_play_playlist_end_to_end(flask_client, requests_mock, plex_token):
+    """
+    "Alexa, ask Plex to play the playlist Road Trip" is handled by the dedicated
+    PlayPlaylistIntent (AMAZON.SearchQuery slot), not the playlist branch of
+    PlayMusicIntent — kept separate so Alexa's NLU can't resolve an unrecognized
+    personal playlist name into the AMAZON.MusicGroup-typed artist slot instead.
+    """
+    requests_mock.get(_plex_url('/playlists/all'), json={
+        'MediaContainer': {
+            'Metadata': [{'ratingKey': '500', 'title': 'Road Trip', 'playlistType': 'audio'}],
+        }
+    })
+    requests_mock.get(_plex_url('/library/shared/all'), json={'MediaContainer': {}})
+    requests_mock.get(_plex_url('/playlists/500/items'), json={
+        'MediaContainer': {
+            'Metadata': [
+                _track_metadata('301', 'Life Is a Highway', 'Rascal Flatts', '/library/parts/3/1/highway.mp3', '/library/metadata/301/thumb/1'),
+            ]
+        }
+    })
+    requests_mock.get(
+        _plex_url('/library/parts/3/1/highway.mp3'),
+        content=b'--fake-mp3-bytes-for-highway--',
+        headers={'Content-Type': 'audio/mpeg'},
+    )
+
+    resp = flask_client.post('/skill', json=play_playlist_envelope('Road Trip'))
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert plex_token not in json.dumps(body)
+
+    stream = _extract_play_directive(body)
+    assert stream['url'].startswith(f'https://{plex_client.PUBLIC_HOSTNAME}/stream/')
+
+    audio_resp = flask_client.get(_path_from_public_url(stream['url']))
+    assert audio_resp.status_code == 200
+    assert audio_resp.data == b'--fake-mp3-bytes-for-highway--'
 
 
 def test_playback_nearly_finished_enqueues_next_track_with_working_url(flask_client, requests_mock, plex_token):

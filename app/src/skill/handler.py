@@ -26,6 +26,13 @@ sb = SkillBuilder()
 TOKEN_PREFIX = "plex-track-"
 
 
+def _ssml_escape(text):
+    """Escape XML special chars so track/artist/album/playlist names with &, <, or >
+    (e.g. "Mumford & Sons") don't produce invalid SSML — ask-sdk's speak() wraps text
+    in <speak>...</speak> as-is with no escaping of its own."""
+    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
 def _user_id(handler_input):
     return handler_input.request_envelope.session.user.user_id if handler_input.request_envelope.session else \
         handler_input.request_envelope.context.system.user.user_id
@@ -114,7 +121,7 @@ def _speak_and_play(handler_input, tracks, description):
     # This prevents previously enqueued tracks from playing after REPLACE_ALL
     return (
         handler_input.response_builder
-        .speak(description + suffix)
+        .speak(_ssml_escape(description) + suffix)
         .add_directive(ClearQueueDirective(clear_behavior=ClearBehavior.CLEAR_ALL))
         .add_directive(directive)
         .response
@@ -183,7 +190,7 @@ class PlayMusicIntentHandler(AbstractRequestHandler):
             if not tracks:
                 return (
                     handler_input.response_builder
-                    .speak(description)
+                    .speak(_ssml_escape(description))
                     .ask("What would you like to play?")
                     .response
                 )
@@ -194,7 +201,7 @@ class PlayMusicIntentHandler(AbstractRequestHandler):
         if not tracks:
             return (
                 handler_input.response_builder
-                .speak(description + ". Please try again.")
+                .speak(_ssml_escape(description) + ". Please try again.")
                 .ask("What would you like to play?")
                 .response
             )
@@ -225,7 +232,7 @@ class ShuffleArtistIntentHandler(AbstractRequestHandler):
         if not tracks:
             return (
                 handler_input.response_builder
-                .speak(description)
+                .speak(_ssml_escape(description))
                 .ask("What would you like to play?")
                 .response
             )
@@ -266,7 +273,7 @@ class PlayPlaylistIntentHandler(AbstractRequestHandler):
         if not tracks:
             return (
                 handler_input.response_builder
-                .speak(description + ". Please try again.")
+                .speak(_ssml_escape(description) + ". Please try again.")
                 .ask("What would you like to play?")
                 .response
             )
@@ -301,7 +308,7 @@ class PlayDecadeIntentHandler(AbstractRequestHandler):
         if not tracks:
             return (
                 handler_input.response_builder
-                .speak(description)
+                .speak(_ssml_escape(description))
                 .ask("What would you like to play?")
                 .response
             )
@@ -319,7 +326,7 @@ class PlayRecentlyPlayedIntentHandler(AbstractRequestHandler):
         if not tracks:
             return (
                 handler_input.response_builder
-                .speak(description)
+                .speak(_ssml_escape(description))
                 .ask("What would you like to play?")
                 .response
             )
@@ -337,7 +344,7 @@ class PlayMostPlayedIntentHandler(AbstractRequestHandler):
         if not tracks:
             return (
                 handler_input.response_builder
-                .speak(description)
+                .speak(_ssml_escape(description))
                 .ask("What would you like to play?")
                 .response
             )
@@ -367,7 +374,7 @@ class PlayGenreIntentHandler(AbstractRequestHandler):
         if not tracks:
             return (
                 handler_input.response_builder
-                .speak(description + ". Please try again.")
+                .speak(_ssml_escape(description) + ". Please try again.")
                 .ask("What would you like to play?")
                 .response
             )
@@ -385,7 +392,7 @@ class PlayRecentlyAddedIntentHandler(AbstractRequestHandler):
         if not tracks:
             return (
                 handler_input.response_builder
-                .speak(description)
+                .speak(_ssml_escape(description))
                 .response
             )
         return _speak_and_play(handler_input, tracks, description)

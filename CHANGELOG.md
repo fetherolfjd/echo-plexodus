@@ -11,6 +11,22 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
 
 ## [Unreleased]
 
+### Fixed
+
+- Playing a playlist ("ask Plex to play the playlist Road Trip") could be
+  misrouted by Alexa's NLU into the artist slot instead, since the `playlist`
+  slot shared `PlayMusicIntent` with the catalog-backed `AMAZON.MusicGroup`
+  slot and personal Plex playlist names aren't in Amazon's music catalog.
+  Playlists now have their own `PlayPlaylistIntent` with an `AMAZON.SearchQuery`
+  slot, which does no catalog matching. **Requires rebuilding the interaction
+  model** (paste the updated `interaction_model.json` into the Alexa Developer
+  Console and Build Model) for existing deployments to pick this up.
+- Track/artist/album/playlist names containing `&`, `<`, or `>` (e.g. "Mumford
+  & Sons") produced invalid SSML — `speak()` wraps text in `<speak>...</speak>`
+  with no escaping of its own — causing Alexa to reject the response entirely
+  ("There was a problem with the requested skill's response"). All dynamic
+  speech text is now XML-escaped before being spoken.
+
 ## [1.0.0] - 2026-09-03
 
 First tagged release. Establishes a versioning and release process (git tags,
