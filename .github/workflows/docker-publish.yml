@@ -42,6 +42,12 @@ jobs:
       # The sha priority bump (default 100 -> 300, still below semver's 900) makes
       # steps.meta.outputs.version — baked into the image as APP_VERSION — resolve
       # to sha-<short> on main builds and to the plain semver on v* tags.
+      #
+      # `dev` always points at the tip of main (pre-release). `latest` is left to
+      # metadata-action's default `latest=auto` flavor, which applies it only to
+      # the highest-priority match on a v* tag push (the `type=semver` rules
+      # below) — so `latest` always tracks the newest tagged release, never a
+      # plain main-branch build.
       - name: Derive image tags and labels
         id: meta
         uses: docker/metadata-action@v5
@@ -51,7 +57,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,priority=300
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=dev,enable={{is_default_branch}}
 
       - name: Build and push
         uses: docker/build-push-action@v6

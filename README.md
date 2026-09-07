@@ -313,15 +313,16 @@ podman run -d --name echo-plexodus -p 5001:5001 --env-file ../.env echo-plexodus
 
 ## Releases & versioning
 
-Releases follow [SemVer](https://semver.org/) as `vMAJOR.MINOR.PATCH` git tags, each with a matching [CHANGELOG.md](CHANGELOG.md) section and a GitHub Release. Published images:
+Releases follow [SemVer](https://semver.org/) as `vMAJOR.MINOR.PATCH` git tags, each with a matching [CHANGELOG.md](CHANGELOG.md) section and a GitHub Release. A version tag only ever gets built from an actual `vX.Y.Z` git tag — never from an ordinary commit to `main`. Published images:
 
 ```
 ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:1.2.3   # exact release
 ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:1.2     # latest patch in a minor line
-ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:latest  # latest main build
+ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:latest  # newest tagged release — moves only when a new vX.Y.Z tag is pushed
+ghcr.io/YOUR_GITHUB_USERNAME/echo-plexodus:dev     # tip of main — untested, pre-release, moves on every push to main
 ```
 
-Pin a specific tag in production and check `curl https://YOUR_HOSTNAME/health` after deploying to confirm the running `version`. The full process is in [RELEASING.md](RELEASING.md).
+Pin a specific tag (or `latest`) in production; use `dev` only if you want to track `main` directly. Check `curl https://YOUR_HOSTNAME/health` after deploying to confirm the running `version`. The full process is in [RELEASING.md](RELEASING.md).
 
 ## Contributing
 

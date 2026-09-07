@@ -11,6 +11,15 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
 
 ## [Unreleased]
 
+### Changed
+
+- **`:latest` image tag now means the newest tagged release, not the newest
+  main-branch build.** Every push to `main` now publishes `:dev` instead;
+  `:latest` only moves when a `vX.Y.Z` tag is pushed. Anyone running `:latest`
+  in production was previously tracking unreleased `main` commits and will now
+  get pinned to the last release instead — switch to `:dev` to keep tracking
+  `main` directly.
+
 ### Fixed
 
 - Playing a playlist ("ask Plex to play the playlist Road Trip") could be
