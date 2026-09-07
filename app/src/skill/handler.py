@@ -152,15 +152,13 @@ class PlayMusicIntentHandler(AbstractRequestHandler):
         song_slot = slots.get('song')
         artist_slot = slots.get('artist')
         album_slot = slots.get('album')
-        playlist_slot = slots.get('playlist')
 
         song_val = song_slot.value if song_slot else None
         artist_val = artist_slot.value if artist_slot else None
         album_val = album_slot.value if album_slot else None
-        playlist_val = playlist_slot.value if playlist_slot else None
         logger.info(
             f"PlayMusicIntent slots: song={song_val!r} artist={artist_val!r} "
-            f"album={album_val!r} playlist={playlist_val!r}"
+            f"album={album_val!r}"
         )
 
         query_type = None
@@ -178,9 +176,6 @@ class PlayMusicIntentHandler(AbstractRequestHandler):
         elif album_val:
             query_type = 'album'
             query = album_val
-        elif playlist_val:
-            query_type = 'playlist'
-            query = playlist_val
 
         if not query_type or not query:
             # No slot filled — treat as "play music" → recently played (falls back to random)
@@ -238,6 +233,45 @@ class ShuffleArtistIntentHandler(AbstractRequestHandler):
         return _speak_and_play(handler_input, tracks, description)
 
 
+
+
+class PlayPlaylistIntentHandler(AbstractRequestHandler):
+    """Handles: play the playlist [name]
+
+    Playlist gets its own intent with an AMAZON.SearchQuery slot rather than
+    sharing PlayMusicIntent with a MusicPlaylist-typed slot: a personal Plex
+    playlist name isn't in Amazon's music catalog, so the catalog-backed
+    MusicPlaylist/MusicGroup slots can end up competing for the same value —
+    e.g. "play the playlist Road Trip" getting resolved into the artist slot
+    instead. SearchQuery does no catalog matching, so it can't get bumped.
+    """
+
+    def can_handle(self, handler_input):
+        return is_intent_name("PlayPlaylistIntent")(handler_input)
+
+    def handle(self, handler_input):
+        slots = handler_input.request_envelope.request.intent.slots or {}
+        playlist_slot = slots.get('playlist')
+        query = playlist_slot.value if playlist_slot else None
+
+        if not query:
+            return (
+                handler_input.response_builder
+                .speak("Which playlist would you like to play?")
+                .ask("Which playlist?")
+                .response
+            )
+
+        tracks, description = resolve_play_request('playlist', query)
+        if not tracks:
+            return (
+                handler_input.response_builder
+                .speak(description + ". Please try again.")
+                .ask("What would you like to play?")
+                .response
+            )
+
+        return _speak_and_play(handler_input, tracks, description)
 
 
 class PlayDecadeIntentHandler(AbstractRequestHandler):
@@ -593,6 +627,7 @@ class GlobalExceptionHandler(AbstractExceptionHandler):
 sb.add_request_handler(LaunchRequestHandler())
 sb.add_request_handler(PlayMusicIntentHandler())
 sb.add_request_handler(ShuffleArtistIntentHandler())
+sb.add_request_handler(PlayPlaylistIntentHandler())
 sb.add_request_handler(PlayDecadeIntentHandler())
 sb.add_request_handler(PlayRecentlyPlayedIntentHandler())
 sb.add_request_handler(PlayMostPlayedIntentHandler())

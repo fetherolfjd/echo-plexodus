@@ -48,10 +48,14 @@ def intent_envelope(intent_name, slots=None, request_id='amzn1.echo-api.request.
     }
 
 
-def play_music_envelope(artist=None, song=None, album=None, playlist=None):
+def play_music_envelope(artist=None, song=None, album=None):
     return intent_envelope('PlayMusicIntent', slots={
-        'song': song, 'artist': artist, 'album': album, 'playlist': playlist,
+        'song': song, 'artist': artist, 'album': album,
     })
+
+
+def play_playlist_envelope(playlist):
+    return intent_envelope('PlayPlaylistIntent', slots={'playlist': playlist})
 
 
 def audio_player_envelope(request_type, token, offset_ms=0, request_id='amzn1.echo-api.request.audioplayer'):

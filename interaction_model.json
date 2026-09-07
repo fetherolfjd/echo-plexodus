@@ -17,10 +17,6 @@
             {
               "name": "album",
               "type": "AMAZON.MusicAlbum"
-            },
-            {
-              "name": "playlist",
-              "type": "AMAZON.MusicPlaylist"
             }
           ],
           "samples": [
@@ -38,8 +34,6 @@
             "play {artist}",
             "play the album {album}",
             "play album {album}",
-            "play the playlist {playlist}",
-            "play playlist {playlist}",
             "put on {artist}",
             "put on the album {album}",
             "put on {song}",
@@ -63,6 +57,23 @@
             "play {artist} on shuffle",
             "random {artist}",
             "play random {artist}"
+          ]
+        },
+        {
+          "name": "PlayPlaylistIntent",
+          "slots": [
+            {
+              "name": "playlist",
+              "type": "AMAZON.SearchQuery"
+            }
+          ],
+          "samples": [
+            "play the playlist {playlist}",
+            "play playlist {playlist}",
+            "play my playlist {playlist}",
+            "put on the playlist {playlist}",
+            "start the playlist {playlist}",
+            "shuffle the playlist {playlist}"
           ]
         },
         {
