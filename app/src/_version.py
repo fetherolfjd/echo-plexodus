@@ -9,4 +9,4 @@ from the git tag at build time); this value is the fallback for local builds and
 for running straight from a source checkout.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

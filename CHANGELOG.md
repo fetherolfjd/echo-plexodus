@@ -11,6 +11,8 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-07
+
 ### Changed
 
 - **`:latest` image tag now means the newest tagged release, not the newest
