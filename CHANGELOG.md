@@ -11,6 +11,8 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
 
 ## [Unreleased]
 
+## [1.2.0]
+
 ### Added
 
 - New `ShufflePlaylistIntent` for "ask Plex to shuffle the playlist X" — plays
