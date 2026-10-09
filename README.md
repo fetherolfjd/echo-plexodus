@@ -271,6 +271,7 @@ docker run --rm echo-plexodus python -c "import ssl; print(ssl.OPENSSL_VERSION)"
 | `TZ` | No | Container timezone (default: `UTC`) other e.g America/Chicago |
 | `ENABLE_STATUS_PAGE` | No | Set to `true` to enable the `/status` diagnostic page (disabled by default) |
 | `DISABLE_REQUEST_VERIFY` | No | Set to `true` to skip Alexa signature verification (testing only) |
+| `LOG_LEVEL` | No | Python logging level (default: `INFO`; falls back to `INFO` with a warning on an invalid value). Set to `DEBUG` to also log the raw incoming Alexa request body on every call and the URL/params/status/size of every Plex API request — noisy, but the most direct way to see exactly what Alexa sent or what Plex returned when troubleshooting |
 
 ## Known Limitations
 
