@@ -141,8 +141,27 @@ def _proxy_signed_path(token):
     excluded = {'content-encoding', 'transfer-encoding', 'connection'}
     headers = [(k, v) for k, v in upstream.headers.items() if k.lower() not in excluded]
 
+    def _stream_upstream():
+        # Plex sometimes drops the connection partway through a transfer. Left
+        # uncaught, that exception escapes mid-response (headers already sent),
+        # gunicorn logs a bare "Socket error processing request", and the client
+        # (Alexa's AudioPlayer) just gets a silently truncated body with no
+        # indication anything went wrong — it then stops without ever telling
+        # our skill, so the queue never advances. Catch it here so we at least
+        # log what broke and end the response cleanly instead of blowing up the
+        # worker thread.
+        bytes_sent = 0
+        try:
+            for chunk in upstream.iter_content(chunk_size=65536):
+                bytes_sent += len(chunk)
+                yield chunk
+        except _requests.exceptions.RequestException as e:
+            logger.error(f"Plex connection broke mid-stream for {path} after {bytes_sent} bytes: {e}")
+        finally:
+            upstream.close()
+
     return Response(
-        stream_with_context(upstream.iter_content(chunk_size=65536)),
+        stream_with_context(_stream_upstream()),
         status=upstream.status_code,
         headers=headers,
     )

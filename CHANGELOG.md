@@ -11,6 +11,21 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
 
 ## [Unreleased]
 
+### Fixed
+
+- `/stream` and `/thumb` no longer silently truncate playback when Plex drops
+  the connection mid-transfer. Previously, an `IncompleteRead`/
+  `ChunkedEncodingError` partway through proxying a track escaped the
+  response generator uncaught, crashing the WSGI worker thread (logged by
+  gunicorn only as a bare "Socket error processing request") and handing
+  Alexa a truncated audio file. Alexa's AudioPlayer doesn't report that kind
+  of failure back to the skill, so the queue never advanced and playback just
+  stopped after whatever track was playing when the connection broke — with
+  nothing in the skill's own logs to explain why. `_proxy_signed_path` in
+  `app.py` now catches `requests.exceptions.RequestException` during
+  streaming, logs the Plex path and how many bytes made it through before
+  ending the response cleanly.
+
 ## [1.2.0]
 
 ### Added

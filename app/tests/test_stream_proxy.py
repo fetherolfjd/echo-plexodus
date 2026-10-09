@@ -77,6 +77,50 @@ def test_stream_proxy_returns_502_when_plex_unreachable(flask_client, requests_m
     assert resp.status_code == 502
 
 
+def test_stream_proxy_ends_cleanly_when_plex_drops_connection_mid_stream(flask_client, monkeypatch, caplog):
+    """
+    Plex occasionally cuts a transfer off partway through (observed in production as
+    urllib3 IncompleteRead / requests ChunkedEncodingError). Left uncaught, that used to
+    escape mid-response and crash the proxy generator, Alexa was left with a silently
+    truncated file, and the queue never advanced since Alexa never reports that back to
+    the skill. The fix should log the failure and just end the response with whatever
+    bytes made it through, rather than letting the exception propagate.
+    """
+    import requests as requests_module
+    import app as app_module
+    from plex import client
+
+    path = '/library/parts/1/2/file.mp3'
+
+    class _FlakyUpstream:
+        status_code = 200
+        headers = {'Content-Type': 'audio/mpeg'}
+
+        def iter_content(self, chunk_size):
+            yield b'partial-audio-bytes'
+            raise requests_module.exceptions.ChunkedEncodingError(
+                'Connection broken: IncompleteRead(17 bytes read, 500 more expected)'
+            )
+
+        def close(self):
+            self.closed = True
+
+    upstream = _FlakyUpstream()
+    monkeypatch.setattr(
+        app_module._requests, 'request',
+        lambda method, url, headers=None, stream=None, timeout=None: upstream,
+    )
+
+    token = client.sign_path(path)
+    with caplog.at_level('ERROR'):
+        resp = flask_client.get(f'/stream/{token}')
+
+    assert resp.status_code == 200
+    assert resp.data == b'partial-audio-bytes'
+    assert upstream.closed
+    assert any('broke mid-stream' in r.message and path in r.message for r in caplog.records)
+
+
 def test_thumb_proxy_works_the_same_way(flask_client, requests_mock, plex_token):
     path = '/library/metadata/1/thumb/2'
     requests_mock.get(_plex_url(path), content=b'fake-jpeg-bytes', headers={'Content-Type': 'image/jpeg'})
