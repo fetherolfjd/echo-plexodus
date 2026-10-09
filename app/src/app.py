@@ -84,12 +84,45 @@ def _check_internet():
         return False, str(e)
 
 
+def _summarize_alexa_response(response_json):
+    """
+    Pull out the fields that actually matter for debugging an Alexa response —
+    directive types, play tokens, enqueue chaining — as a short, never-truncated
+    line. The full JSON is dominated by album art URLs, so a flat [:500] char
+    truncation (still logged alongside this, for anything this misses) reliably
+    cuts off exactly the directive fields needed to trace a playback handoff.
+    """
+    resp = response_json.get('response', {})
+    parts = []
+    if resp.get('outputSpeech'):
+        parts.append('speech')
+    for d in resp.get('directives', []) or []:
+        dtype = d.get('type')
+        if dtype == 'AudioPlayer.Play':
+            stream = d.get('audioItem', {}).get('stream', {})
+            parts.append(
+                f"Play(behavior={d.get('playBehavior')}, token={stream.get('token')!r}, "
+                f"prev_token={stream.get('expectedPreviousToken')!r}, "
+                f"offset_ms={stream.get('offsetInMilliseconds')})"
+            )
+        elif dtype == 'AudioPlayer.ClearQueue':
+            parts.append(f"ClearQueue({d.get('clearBehavior')})")
+        else:
+            parts.append(dtype)
+    return ', '.join(parts) if parts else '(no directives)'
+
+
 @app.route('/skill', methods=['POST'])
 def skill_endpoint():
     """Main Alexa skill endpoint."""
     try:
         response = skill_adapter.dispatch_request()
-        logger.info(f"Response to Alexa: {response.get_data(as_text=True)[:500]}")
+        raw = response.get_data(as_text=True)
+        try:
+            summary = _summarize_alexa_response(json.loads(raw))
+        except Exception:
+            summary = '(unparsable)'
+        logger.info(f"Response to Alexa: {summary} | raw={raw[:500]}")
         return response
     except Exception as e:
         logger.error(f"Skill dispatch failed: {e}", exc_info=True)
@@ -117,14 +150,17 @@ def _proxy_signed_path(token):
     try:
         path = unsign_path(token, max_age=STREAM_TOKEN_TTL)
     except SignatureExpired:
+        logger.warning(f"Signed-link request with expired token ({request.method} {request.path})")
         return Response('Link expired', status=410)
     except BadSignature:
+        logger.warning(f"Signed-link request with invalid/tampered token ({request.method} {request.path})")
         return Response('Invalid link', status=403)
 
     method = 'HEAD' if request.method == 'HEAD' else 'GET'
     upstream_headers = {'X-Plex-Token': PLEX_TOKEN}
-    if 'Range' in request.headers:
-        upstream_headers['Range'] = request.headers['Range']
+    range_header = request.headers.get('Range')
+    if range_header:
+        upstream_headers['Range'] = range_header
 
     try:
         upstream = _requests.request(
@@ -137,6 +173,11 @@ def _proxy_signed_path(token):
     except Exception as e:
         logger.error(f"Proxy to Plex failed for {path}: {e}")
         return Response('Upstream Plex server unreachable', status=502)
+
+    logger.info(
+        f"Proxying {method} {path}: upstream status={upstream.status_code}"
+        + (f" range={range_header}" if range_header else "")
+    )
 
     excluded = {'content-encoding', 'transfer-encoding', 'connection'}
     headers = [(k, v) for k, v in upstream.headers.items() if k.lower() not in excluded]
@@ -155,6 +196,7 @@ def _proxy_signed_path(token):
             for chunk in upstream.iter_content(chunk_size=65536):
                 bytes_sent += len(chunk)
                 yield chunk
+            logger.info(f"Finished proxying {path}: {bytes_sent} bytes sent")
         except _requests.exceptions.RequestException as e:
             logger.error(f"Plex connection broke mid-stream for {path} after {bytes_sent} bytes: {e}")
         finally:

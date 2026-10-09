@@ -447,6 +447,8 @@ class PlaybackNearlyFinishedHandler(AbstractRequestHandler):
     def handle(self, handler_input):
         user_id = _user_id(handler_input)
         current_token = handler_input.request_envelope.request.token
+        offset_ms = getattr(handler_input.request_envelope.request, 'offset_in_milliseconds', None)
+        logger.info(f"AudioPlayer.PlaybackNearlyFinished: token={current_token!r} offset_ms={offset_ms}")
 
         # Decode the playing index from the token (format: plex-track-{index}-{key})
         try:
@@ -469,7 +471,16 @@ class PlaybackNearlyFinishedHandler(AbstractRequestHandler):
                 .response
             )
 
-        # No more tracks
+        if next_track is None:
+            logger.info(
+                f"PlaybackNearlyFinished: no track at index {next_index} for {user_id} "
+                "— queue exhausted (or no queue found); nothing to enqueue"
+            )
+        else:
+            logger.warning(
+                f"PlaybackNearlyFinished: track at index {next_index} for {user_id} has no "
+                f"stream_key — skipping enqueue: {next_track!r}"
+            )
         return handler_input.response_builder.response
 
 
@@ -480,6 +491,8 @@ class PlaybackFinishedHandler(AbstractRequestHandler):
         return is_request_type("AudioPlayer.PlaybackFinished")(handler_input)
 
     def handle(self, handler_input):
+        token = getattr(handler_input.request_envelope.request, 'token', None)
+        logger.info(f"AudioPlayer.PlaybackFinished: token={token!r}")
         user_id = _user_id(handler_input)
         advance_queue(user_id)
         return handler_input.response_builder.response
@@ -490,6 +503,9 @@ class PlaybackStartedHandler(AbstractRequestHandler):
         return is_request_type("AudioPlayer.PlaybackStarted")(handler_input)
 
     def handle(self, handler_input):
+        token = getattr(handler_input.request_envelope.request, 'token', None)
+        offset_ms = getattr(handler_input.request_envelope.request, 'offset_in_milliseconds', None)
+        logger.info(f"AudioPlayer.PlaybackStarted: token={token!r} offset_ms={offset_ms}")
         return handler_input.response_builder.response
 
 
@@ -499,7 +515,9 @@ class PlaybackStoppedHandler(AbstractRequestHandler):
 
     def handle(self, handler_input):
         user_id = _user_id(handler_input)
+        token = getattr(handler_input.request_envelope.request, 'token', None)
         offset_ms = getattr(handler_input.request_envelope.request, 'offset_in_milliseconds', 0) or 0
+        logger.info(f"AudioPlayer.PlaybackStopped: token={token!r} offset_ms={offset_ms}")
         set_offset(user_id, offset_ms)
         return handler_input.response_builder.response
 
@@ -509,7 +527,7 @@ class PlaybackFailedHandler(AbstractRequestHandler):
         return is_request_type("AudioPlayer.PlaybackFailed")(handler_input)
 
     def handle(self, handler_input):
-        logger.error(f"Playback failed: {handler_input.request_envelope.request}")
+        logger.error(f"AudioPlayer.PlaybackFailed: {handler_input.request_envelope.request}")
         user_id = _user_id(handler_input)
         advance_queue(user_id)
         return handler_input.response_builder.response

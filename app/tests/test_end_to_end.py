@@ -262,6 +262,37 @@ def test_playback_nearly_finished_enqueues_next_track_with_working_url(flask_cli
     assert fetch_resp.data == expected_bytes
 
 
+def test_playback_nearly_finished_at_end_of_queue_logs_why_nothing_was_enqueued(
+    flask_client, requests_mock, caplog
+):
+    """
+    Reaching the end of the queue is a normal outcome (a single-song request, or just
+    finishing a shuffle) and the response is correctly empty either way — but it used to
+    be silent too, making "queue legitimately ended" indistinguishable in the logs from
+    "something went wrong and nothing got enqueued". Should now say which one it is.
+    """
+    _stub_plex_artist_and_tracks(requests_mock)
+    requests_mock.get(_plex_url('/library/parts/2/1/higher.mp3'), content=b'higher-bytes')
+    requests_mock.get(_plex_url('/library/parts/2/2/sacrifice.mp3'), content=b'sacrifice-bytes')
+
+    flask_client.post('/skill', json=play_music_envelope(artist='Creed'))
+
+    # Jump straight to the last track so the *next* NearlyFinished has nothing left to give.
+    skill_queue.advance_queue(USER_ID)
+    last_track = skill_queue.get_current_track(USER_ID)
+    last_token = f"plex-track-1-{last_track['rating_key']}"
+
+    with caplog.at_level('INFO'):
+        resp = flask_client.post(
+            '/skill',
+            json=audio_player_envelope('AudioPlayer.PlaybackNearlyFinished', token=last_token),
+        )
+
+    assert resp.status_code == 200
+    assert not resp.get_json()['response'].get('directives')
+    assert any('queue exhausted' in r.message for r in caplog.records)
+
+
 def test_resume_after_expiry_mints_a_fresh_token_rather_than_reusing_a_dead_one(
     flask_client, requests_mock, plex_token, monkeypatch
 ):

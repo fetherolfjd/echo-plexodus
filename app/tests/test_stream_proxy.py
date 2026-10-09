@@ -77,6 +77,25 @@ def test_stream_proxy_returns_502_when_plex_unreachable(flask_client, requests_m
     assert resp.status_code == 502
 
 
+def test_stream_proxy_logs_completion_with_byte_count(flask_client, requests_mock, caplog):
+    """
+    The only prior visibility into /stream and /thumb was the error path (502 on Plex
+    being unreachable). There was no record at all of a successful fetch — status code,
+    bytes actually sent — which made it impossible to tell whether Alexa ever requested
+    an enqueued track's URL in the first place.
+    """
+    path = '/library/parts/1/2/file.mp3'
+    requests_mock.get(_plex_url(path), content=b'fake-audio-bytes', headers={'Content-Type': 'audio/mpeg'})
+    token = client.sign_path(path)
+
+    with caplog.at_level('INFO'):
+        resp = flask_client.get(f'/stream/{token}')
+
+    assert resp.status_code == 200
+    assert any(f"Proxying GET {path}: upstream status=200" in r.message for r in caplog.records)
+    assert any(f"Finished proxying {path}: {len(resp.data)} bytes sent" in r.message for r in caplog.records)
+
+
 def test_stream_proxy_ends_cleanly_when_plex_drops_connection_mid_stream(flask_client, monkeypatch, caplog):
     """
     Plex occasionally cuts a transfer off partway through (observed in production as

@@ -26,6 +26,23 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
   streaming, logs the Plex path and how many bytes made it through before
   ending the response cleanly.
 
+### Added
+
+- Logging to close the blind spots hit while diagnosing the above: every
+  `AudioPlayer` event handler (`PlaybackStarted`, `PlaybackStopped`,
+  `PlaybackFinished`, `PlaybackNearlyFinished`, `PlaybackFailed`) now logs its
+  token on arrival, instead of several of them handling the request silently
+  and leaving the event type to be inferred from the shape of an empty JSON
+  response. `PlaybackNearlyFinishedHandler` specifically now logs which of
+  its two silent-empty cases happened — queue legitimately exhausted vs. a
+  queued track missing a `stream_key` — where previously both looked
+  identical in the logs. `/stream` and `/thumb` now log the upstream status
+  and byte count for every request, not just failures. And `Response to
+  Alexa` logging now leads with a short structured summary (directive types,
+  play token, `expectedPreviousToken`, `playBehavior`) before the existing
+  truncated raw JSON, since that truncation reliably cut off exactly those
+  fields on any response carrying album art.
+
 ## [1.2.0]
 
 ### Added
