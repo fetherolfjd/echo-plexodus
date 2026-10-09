@@ -235,6 +235,13 @@ Watch the logs: `docker logs echo-plexodus -f` (or `podman logs echo-plexodus -f
 ### "Link expired"
 Each `/stream`/`/thumb` link is signed fresh the moment a directive is built — including on resume and on each queued-up next track — so this should be rare even on a long queue or a long pause. It means `SECRET_KEY` changed between minting the link and Alexa fetching it (e.g. a container restart right in that window without `SECRET_KEY` pinned), or `STREAM_TOKEN_TTL_SECONDS` has been set unreasonably low. Ask Plex to play something again to get a fresh directive.
 
+### Music plays for a while then just stops, with no error from Alexa
+The skill logs enough to tell apart the common causes — check `docker logs echo-plexodus` (or `podman logs ...`) around the time it stopped:
+- `PlaybackNearlyFinished: no track at index ... — queue exhausted` — expected: you asked for a single song, or the queue (artist/playlist/shuffle) genuinely finished. Not a bug.
+- `PlaybackNearlyFinished: ... has no stream_key` — a track in the queue is missing playable media in Plex.
+- `Plex connection broke mid-stream for ... after N bytes` — Plex itself dropped the connection partway through sending the audio file. Alexa doesn't report this failure back to the skill, so from the skill's side playback just stops; check Plex's own logs/network path next.
+- Nothing at all in the logs around when it stopped — Alexa never requested the enqueued track's URL. Set `LOG_LEVEL=DEBUG` and reproduce: this logs the raw incoming request from Alexa on every call, and every `/stream`/`/thumb` fetch's status and byte count, so you can see directly whether Alexa ever asked for it.
+
 ### Container can't reach the internet / Alexa request verification fails
 The skill verifier needs to fetch Amazon's certificate from the internet. If the container can't reach it, add `DISABLE_REQUEST_VERIFY=true` temporarily while debugging network issues, and check the container's own network/DNS setup.
 
@@ -257,6 +264,7 @@ docker run --rm echo-plexodus python -c "import ssl; print(ssl.OPENSSL_VERSION)"
 - `/skill` only accepts POST; `/stream` and `/thumb` only accept GET/HEAD — enforced by the app itself, no proxy-side path allowlist required
 - Consider rotating your Plex token periodically — `python scripts/get_plex_token.py` and restart the container
 - Consider creating a dedicated Plex managed user with access only to the music library for an isolated token
+- `LOG_LEVEL=DEBUG` logs the raw incoming request body from Alexa on every call, which includes Alexa's own session `apiAccessToken` and account/device IDs (never the Plex token — that's still never logged anywhere, at any level). Treat DEBUG-level logs with the same care as any other credential-bearing log output, and don't leave it on longer than you need it for troubleshooting
 
 ## Environment Variables
 
