@@ -67,9 +67,13 @@ SESSION.headers.update({'Accept': 'application/json', 'X-Plex-Token': PLEX_TOKEN
 def _get(path, **kwargs):
     """Make a GET request to the Plex server."""
     url = PLEX_URL.rstrip('/') + path
+    # The one chokepoint every Plex API call goes through — kwargs is safe to log
+    # as-is, the real X-Plex-Token lives on SESSION's headers, never in here.
+    logger.debug(f"Plex GET {url} params={kwargs}")
     try:
         resp = SESSION.get(url, params=kwargs, timeout=10)
         resp.raise_for_status()
+        logger.debug(f"Plex response for {path}: status={resp.status_code} bytes={len(resp.content)}")
         return resp.json()
     except Exception as e:
         logger.error(f"Plex API error for {path}: {e}")
@@ -485,7 +489,10 @@ def resolve_play_request(query_type, query, artist_filter=None, shuffle=False):
     Returns (tracks, description) tuple.
     """
     query = query.strip()
-    logger.info(f"Resolving play request: type={query_type}, query={query!r}, artist_filter={artist_filter!r}")
+    logger.info(
+        f"Resolving play request: type={query_type}, query={query!r}, "
+        f"artist_filter={artist_filter!r}, shuffle={shuffle!r}"
+    )
 
     if query_type == 'song':
         results = search_tracks(query)

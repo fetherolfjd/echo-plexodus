@@ -213,3 +213,23 @@ def test_internal_plex_requests_send_token_as_header_not_query_param(requests_mo
     made_request = requests_mock.request_history[0]
     assert made_request.headers['X-Plex-Token'] == client.PLEX_TOKEN
     assert 'X-Plex-Token' not in (made_request.query or '')
+
+
+def test_get_logs_request_and_response_at_debug_without_leaking_token(requests_mock, caplog):
+    """
+    _get is the one chokepoint every Plex API call goes through. At DEBUG it should
+    trace the URL/params and the response status/size — but since the real token
+    lives on SESSION's headers rather than being passed through **kwargs, logging
+    kwargs as-is must never end up printing it.
+    """
+    base = client.PLEX_URL.rstrip('/')
+    requests_mock.get(f'{base}/library/search', json={'MediaContainer': {}})
+
+    with caplog.at_level('DEBUG'):
+        client._get('/library/search', query='Creed', type=8)
+
+    debug_records = [r for r in caplog.records if r.levelname == 'DEBUG']
+    assert any('Plex GET' in r.message and '/library/search' in r.message for r in debug_records)
+    assert any('Plex response for /library/search' in r.message and 'status=200' in r.message
+               for r in debug_records)
+    assert all(client.PLEX_TOKEN not in r.message for r in debug_records)

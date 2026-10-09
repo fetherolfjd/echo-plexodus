@@ -17,8 +17,17 @@ from _version import __version__ as _CODE_VERSION
 from skill.handler import sb
 from plex.client import _get, PLEX_URL, PLEX_TOKEN, unsign_path
 
+# Configurable so DEBUG (raw incoming Alexa requests, raw Plex API calls — see
+# skill_endpoint and plex.client._get) can be turned on at runtime without a code
+# change, rather than being permanently unreachable behind a hardcoded INFO floor.
+_LOG_LEVEL_NAME = os.environ.get('LOG_LEVEL', 'INFO').upper()
+_LOG_LEVEL = getattr(logging, _LOG_LEVEL_NAME, None)
+if not isinstance(_LOG_LEVEL, int):
+    _LOG_LEVEL = logging.INFO
+    _LOG_LEVEL_NAME = f"INFO (invalid LOG_LEVEL {_LOG_LEVEL_NAME!r}, falling back)"
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=_LOG_LEVEL,
     format='%(asctime)s %(name)s %(levelname)s %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -59,7 +68,10 @@ app.config['ASK_SDK_VERIFY_TIMESTAMP'] = not DISABLE_VERIFY
 
 from flask_ask_sdk.skill_adapter import SkillAdapter
 
-logger.info(f"echo-plexodus {APP_VERSION} starting (request verification {'disabled' if DISABLE_VERIFY else 'enabled'})")
+logger.info(
+    f"echo-plexodus {APP_VERSION} starting "
+    f"(request verification {'disabled' if DISABLE_VERIFY else 'enabled'}, log level={_LOG_LEVEL_NAME})"
+)
 
 skill_adapter = SkillAdapter(
     skill=sb.create(),
@@ -116,6 +128,12 @@ def _summarize_alexa_response(response_json):
 def skill_endpoint():
     """Main Alexa skill endpoint."""
     try:
+        # Only the outgoing response is logged at INFO (above). The incoming request —
+        # full slot values, AudioPlayer event fields, session state — is only ever
+        # inferred from that, which is exactly the blind spot that made the last
+        # playback-stall bug slow to pin down. DEBUG-only since it's the full request
+        # body on every single invocation, Alexa session/API tokens included.
+        logger.debug(f"Request from Alexa: {request.get_data(as_text=True)}")
         response = skill_adapter.dispatch_request()
         raw = response.get_data(as_text=True)
         try:

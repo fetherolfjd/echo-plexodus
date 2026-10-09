@@ -42,6 +42,17 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
   play token, `expectedPreviousToken`, `playBehavior`) before the existing
   truncated raw JSON, since that truncation reliably cut off exactly those
   fields on any response carrying album art.
+- `resolve_play_request`'s entry log now includes `shuffle`, so "play the
+  playlist X" and "shuffle the playlist X" — the only difference between
+  `PlayPlaylistIntentHandler` and `ShufflePlaylistIntentHandler` — are
+  distinguishable in the logs instead of producing an identical line.
+- The log level is now configurable via `LOG_LEVEL` (default `INFO`, falls
+  back to `INFO` with a note on an invalid value), and there's now DEBUG
+  content worth turning it on for: the raw incoming Alexa request body in
+  `/skill` (previously only the outgoing response was logged, so the actual
+  request always had to be inferred from it), and every `plex.client._get`
+  call's URL/params before and status/byte-size after — the one chokepoint
+  all Plex API traffic goes through.
 
 ## [1.2.0]
 

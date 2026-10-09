@@ -61,6 +61,31 @@ def _path_from_public_url(url):
     return '/' + url.split('/', 3)[3]
 
 
+def test_skill_endpoint_logs_raw_request_at_debug_only(flask_client, requests_mock, caplog):
+    """
+    Only the outgoing response was ever logged, at INFO — the incoming request (full
+    slot values, AudioPlayer event fields) had to be inferred from that, which is what
+    made the last playback-stall bug slow to pin down. It should now be logged too, at
+    DEBUG so it doesn't show up at the normal INFO level by default.
+    """
+    _stub_plex_artist_and_tracks(requests_mock)
+    requests_mock.get(_plex_url('/library/parts/2/1/higher.mp3'), content=b'higher-bytes')
+    requests_mock.get(_plex_url('/library/parts/2/2/sacrifice.mp3'), content=b'sacrifice-bytes')
+    envelope = play_music_envelope(artist='Creed')
+
+    with caplog.at_level('INFO'):
+        flask_client.post('/skill', json=envelope)
+    assert not any('Request from Alexa' in r.message for r in caplog.records)
+
+    caplog.clear()
+    with caplog.at_level('DEBUG'):
+        flask_client.post('/skill', json=envelope)
+    assert any(
+        r.message.startswith('Request from Alexa:') and '"PlayMusicIntent"' in r.message
+        for r in caplog.records
+    )
+
+
 def test_play_artist_end_to_end(flask_client, requests_mock, plex_token):
     """
     "Alexa, ask Plex to play the artist Creed" -> skill searches (fake) Plex, returns
