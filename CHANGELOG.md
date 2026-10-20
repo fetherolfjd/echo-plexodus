@@ -11,6 +11,8 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-19
+
 ### Fixed
 
 - `/stream` and `/thumb` no longer silently truncate playback when Plex drops
