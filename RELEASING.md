@@ -36,10 +36,16 @@ CI refuses to build or release a `v*` tag whose name does not match
    git push origin main vX.Y.Z
    ```
 
+   Push `main` and the tag together, in one command. The main-branch run of
+   `docker-publish.yml` skips commits that already carry a `v*` tag, which
+   leaves the tag run to build a single image with every tag. If you push `main`
+   first, its run can't see the tag yet and builds a second image for the same
+   commit.
+
 That's it. Pushing the tag triggers two workflows:
 
 - **`docker-publish.yml`** — builds and pushes
-  `ghcr.io/<owner>/echo-plexodus:X.Y.Z`, `:X.Y`, `:sha-<sha>`, and `:latest`,
+  `ghcr.io/<owner>/echo-plexodus:X.Y.Z`, `:X.Y`, `:sha-<sha>`, `:dev`, and `:latest`,
   with `APP_VERSION=X.Y.Z` baked in.
 - **`release.yml`** — runs the test suite, then creates the GitHub Release named
   `vX.Y.Z` with the changelog section as its body.

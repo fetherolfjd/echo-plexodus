@@ -21,6 +21,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # A release push (`git push origin main vX.Y.Z`) runs this workflow twice
+      # for the same commit. Leave the build to the tag run, so a release ends up
+      # as one image carrying the semver tags plus dev and sha-<short>, rather
+      # than two images racing for sha-<short>. Matches the peeled `^{}` line
+      # for annotated tags as well as lightweight ones.
+      - name: Skip main build of a release commit
+        id: release
+        if: github.ref_type == 'branch'
+        run: |
+          if git ls-remote --tags origin 'refs/tags/v*' | grep -q "^${GITHUB_SHA}"; then
+            echo "Commit $GITHUB_SHA is tagged for release; the tag run builds it."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Verify tag matches app version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -33,6 +47,7 @@ jobs:
           fi
 
       - name: Log in to GitHub Container Registry
+        if: steps.release.outputs.skip != 'true'
         uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
@@ -43,13 +58,17 @@ jobs:
       # steps.meta.outputs.version — baked into the image as APP_VERSION — resolve
       # to sha-<short> on main builds and to the plain semver on v* tags.
       #
-      # `dev` always points at the tip of main (pre-release). `latest` is left to
-      # metadata-action's default `latest=auto` flavor, which applies it only to
-      # the highest-priority match on a v* tag push (the `type=semver` rules
-      # below) — so `latest` always tracks the newest tagged release, never a
-      # plain main-branch build.
+      # `dev` always points at the tip of main (pre-release). It's applied
+      # unconditionally: this workflow only runs for main and v* tags, and a
+      # release is always cut from the tip of main (RELEASING.md), so the release
+      # image is also the new tip of main. `latest` is left to metadata-action's
+      # default `latest=auto` flavor, which applies it only to the
+      # highest-priority match on a v* tag push (the `type=semver` rules below) —
+      # so `latest` always tracks the newest tagged release, never a plain
+      # main-branch build.
       - name: Derive image tags and labels
         id: meta
+        if: steps.release.outputs.skip != 'true'
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
@@ -57,9 +76,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,priority=300
-            type=raw,value=dev,enable={{is_default_branch}}
+            type=raw,value=dev
 
       - name: Build and push
+        if: steps.release.outputs.skip != 'true'
         uses: docker/build-push-action@v7
         with:
           context: ./app
