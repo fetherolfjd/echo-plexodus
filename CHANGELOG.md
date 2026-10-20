@@ -11,6 +11,20 @@ verbatim (see [RELEASING.md](RELEASING.md)). The dated entries under
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-10-19
+
+### Fixed
+
+- A release now publishes a single container image. Previously, pushing `main`
+  and a `vX.Y.Z` tag together ran `docker-publish.yml` twice for the same
+  commit, building two images with different digests: one tagged `dev` (and
+  reporting `sha-<short>` as its version) and one tagged `X.Y.Z`, `X.Y` and
+  `latest`. Both pushed `sha-<short>`, so whichever finished last took it. For
+  v1.2.1 this left `dev` and `sha-3fbff78` on a different image from `1.2.1`.
+  The main-branch run now skips commits that already carry a `v*` tag, and the
+  tag run applies `dev` itself, so the release image carries every tag and
+  reports the release version.
+
 ## [1.2.1] - 2026-10-19
 
 ### Fixed
